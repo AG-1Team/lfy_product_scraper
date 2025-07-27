@@ -16,128 +16,89 @@ import os
 import re
 import json
 from urllib.parse import urljoin, urlparse
-import undetected_chromedriver as uc
-import random
-import time
-import traceback
-import base64
-import requests
 
 def setup_driver():
-    """Setup undetected Chrome driver with maximum stealth"""
+    """Setup stealth-enabled Chrome driver with advanced anti-detection"""
     try:
-        print("[*] Setting up undetected Chrome driver...")
-        options = uc.ChromeOptions()
-
-        # ✅ Specify binary location explicitly (for Docker/Headless)
-        options.binary_location = "/usr/bin/google-chrome"
-
-        # --- User-Agent ---
-        realistic_agents = [
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        ]
-        user_agent = random.choice(realistic_agents)
+        # Rotate user agent
+        ua = UserAgent()
+        user_agent = ua.random
         print(f"[*] Using User-Agent: {user_agent}")
-
-        # --- Chrome Flags ---
-        chrome_flags = [
-            "--headless=new",  # modern headless
-            f"--user-agent={user_agent}",
-            "--no-sandbox",
-            "--disable-dev-shm-usage",
-            "--disable-blink-features=AutomationControlled",
-            "--disable-extensions",
-            "--disable-gpu",
-            "--disable-sync",
-            "--disable-translate",
-            "--mute-audio",
-            "--hide-scrollbars",
-            "--disable-background-networking",
-            "--no-first-run",
-            "--disable-default-apps",
-            "--disable-infobars",
-            "--disable-ipc-flooding-protection",
-            "--disable-features=TranslateUI,BlinkGenPropertyTrees"
+        
+        # Chrome options with extensive anti-detection
+        options = Options()
+        options.add_argument(f"user-agent={user_agent}")
+        options.add_argument("--headless=new")  # new headless mode
+        # Core anti-detection arguments
+        options.add_argument("--no-sandbox")
+        options.add_argument("--disable-dev-shm-usage")
+        options.add_argument("--disable-blink-features=AutomationControlled")
+        options.add_argument("--disable-extensions")
+        options.add_argument("--disable-plugins")
+        options.add_argument("--incognito")
+        options.add_argument("--disable-infobars")
+        options.add_argument("--disable-gpu")
+        options.add_argument("--disable-web-security")
+        options.add_argument("--disable-features=VizDisplayCompositor")
+        options.add_argument("--disable-ipc-flooding-protection")
+        options.add_argument("--disable-renderer-backgrounding")
+        options.add_argument("--disable-backgrounding-occluded-windows")
+        options.add_argument("--disable-client-side-phishing-detection")
+        options.add_argument("--disable-sync")
+        options.add_argument("--disable-default-apps")
+        options.add_argument("--hide-scrollbars")
+        options.add_argument("--mute-audio")
+        
+        # Window size randomization
+        window_sizes = [
+            (1366, 768), (1920, 1080), (1440, 900), (1536, 864), (1280, 720)
         ]
-        for flag in chrome_flags:
-            options.add_argument(flag)
-
-        # --- Randomize window size and position ---
-        common_resolutions = [(1920, 1080), (1366, 768), (1536, 864)]
-        width, height = random.choice(common_resolutions)
+        width, height = random.choice(window_sizes)
         options.add_argument(f"--window-size={width},{height}")
-        options.add_argument(f"--window-position={random.randint(0,100)},{random.randint(0,100)}")
-
-        # --- Language & Timezone ---
-        lang = random.choice(["en-US,en", "en-GB,en", "en-CA,en"])
-        options.add_argument(f"--accept-lang={lang}")
-        timezone = random.choice(["Asia/Dubai", "Asia/Riyadh", "Asia/Kuwait"])
-        options.add_argument(f"--timezone={timezone}")
-
-        # --- Chrome Preferences ---
+        
+        # Random viewport
+        options.add_argument(f"--window-position={random.randint(0, 100)},{random.randint(0, 100)}")
+        
+        # Experimental options to avoid detection
+        options.add_experimental_option("excludeSwitches", ["enable-automation", "enable-logging"])
+        options.add_experimental_option('useAutomationExtension', False)
+        
+        # Additional prefs
         prefs = {
             "profile.default_content_setting_values": {
                 "notifications": 2,
                 "media_stream": 2,
-                "geolocation": 2
-            },
-            "profile.managed_default_content_settings.images": 1,
-            "profile.password_manager_enabled": False,
-            "credentials_enable_service": False,
+            }
         }
         options.add_experimental_option("prefs", prefs)
-
-        # --- Initialize Chrome Driver ---
-        driver = uc.Chrome(options=options, version_main=None)
-        driver.set_page_load_timeout(60)
-        driver.set_script_timeout(30)
+        
+        # Initialize driver
+        service = Service()  # Uses default chromedriver path
+        driver = webdriver.Chrome(service=service, options=options)
+        
+        # Additional anti-detection measures
+        driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        
+        # Use selenium-stealth for additional protection
+        stealth(driver,
+                languages=["en-US", "en"],
+                vendor="Google Inc.",
+                platform="Win32",
+                webgl_vendor="Intel Inc.",
+                renderer="Intel Iris OpenGL Engine",
+                fix_hairline=True,
+        )
+        
+        # Set realistic timeouts
         driver.implicitly_wait(10)
-
-        # --- Stealth JavaScript ---
-        stealth_js = """
-        Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-        Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3]});
-        Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
-        const originalQuery = window.navigator.permissions.query;
-        window.navigator.permissions.query = (parameters) => (
-            parameters.name === 'notifications'
-                ? Promise.resolve({ state: Notification.permission })
-                : originalQuery(parameters)
-        );
-        if (window.chrome) {
-            Object.defineProperty(window.chrome, 'runtime', {get: () => undefined});
-        }
-        delete window.cdc_adoQpoasnfa76pfcZLmcfl_Array;
-        delete window.cdc_adoQpoasnfa76pfcZLmcfl_Promise;
-        delete window.cdc_adoQpoasnfa76pfcZLmcfl_Symbol;
-        """
-
-        try:
-            driver.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument', {'source': stealth_js})
-            driver.execute_cdp_cmd('Emulation.setDeviceMetricsOverride', {
-                'width': width,
-                'height': height,
-                'deviceScaleFactor': round(random.uniform(1.0, 2.0), 1),
-                'mobile': False
-            })
-            driver.execute_cdp_cmd('Network.setUserAgentOverride', {
-                'userAgent': user_agent,
-                'acceptLanguage': lang,
-                'platform': random.choice(['Win32', 'Linux x86_64', 'MacIntel'])
-            })
-        except Exception as js_err:
-            print(f"[!] Stealth script injection failed: {js_err}")
-
-        print("[✅] Undetected driver setup complete")
+        driver.set_page_load_timeout(30)
+        
         return driver
-
+        
     except Exception as e:
-        print(f"[❌] Failed to setup undetected driver:\n{traceback.format_exc()}")
+        print(f"[Error] Failed to setup driver: {e}")
+        print("[*] Make sure ChromeDriver is installed and in PATH")
         return None
-
-
 
 def extract_breadcrumb_category(driver, soup):
     """Extract breadcrumb category path"""
@@ -729,33 +690,6 @@ def save_data_with_append(all_products, existing_products):
                 json_filename = backup_json
     
     return csv_filename, json_filename, len(combined_products)
-    
-def upload_to_github(file_path, repo, token, path_in_repo, commit_msg="Upload scraped data"):
-    """Uploads a local file to a GitHub repository."""
-    with open(file_path, "rb") as f:
-        content = f.read()
-    content_b64 = base64.b64encode(content).decode('utf-8')
-    api_url = f"https://api.github.com/repos/{repo}/contents/{path_in_repo}"
-
-    headers = {"Authorization": f"token {token}"}
-    payload = {
-        "message": commit_msg,
-        "content": content_b64,
-        "branch": "main"
-    }
-
-    # Check if file exists to get SHA (needed for updates)
-    response = requests.get(api_url, headers=headers)
-    if response.status_code == 200 and 'sha' in response.json():
-        payload["sha"] = response.json()['sha']
-
-    put_response = requests.put(api_url, headers=headers, json=payload)
-
-    if put_response.status_code in [200, 201]:
-        print(f"[📤] Uploaded {file_path} to GitHub at {path_in_repo}")
-    else:
-        print(f"[❌] Failed to upload {file_path}: {put_response.text}")
-
 
 def main():
     MAX_PRODUCTS_PER_CATEGORY = None  
@@ -981,12 +915,6 @@ def main():
     if all_products:
         csv_filename, json_filename, total_products = save_data_with_append(all_products, existing_products)
         
-        GITHUB_REPO = "os959345/webscrapper"
-        GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")  # ✅ correct usage
-        
-        upload_to_github(csv_filename, GITHUB_REPO, GITHUB_TOKEN, f"data/{csv_filename}")
-        upload_to_github(json_filename, GITHUB_REPO, GITHUB_TOKEN, f"data/{json_filename}")
-
         print("\n" + "=" * 60)
         print("📊 FINAL SCRAPING RESULTS")
         print("=" * 60)
