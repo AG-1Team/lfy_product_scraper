@@ -16,89 +16,118 @@ import os
 import re
 import json
 from urllib.parse import urljoin, urlparse
+import undetected_chromedriver as uc
+import random
+import time
+import traceback
+import base64
+import requests
 
 def setup_driver():
-    """Setup stealth-enabled Chrome driver with advanced anti-detection"""
+    """Setup undetected Chrome driver with maximum stealth"""
     try:
-        # Rotate user agent
-        ua = UserAgent()
-        user_agent = ua.random
+        print("[*] Setting up undetected Chrome driver...")
+        options = uc.ChromeOptions()
+        realistic_agents = [
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        ]
+        user_agent = random.choice(realistic_agents)
         print(f"[*] Using User-Agent: {user_agent}")
-        
-        # Chrome options with extensive anti-detection
-        options = Options()
-        options.add_argument(f"user-agent={user_agent}")
-        options.add_argument("--headless=new")  # new headless mode
-        # Core anti-detection arguments
+        options.add_argument(f"--user-agent={user_agent}")
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-blink-features=AutomationControlled")
-        options.add_argument("--disable-extensions")
-        options.add_argument("--disable-plugins")
-        options.add_argument("--incognito")
-        options.add_argument("--disable-infobars")
-        options.add_argument("--disable-gpu")
-        options.add_argument("--disable-web-security")
-        options.add_argument("--disable-features=VizDisplayCompositor")
-        options.add_argument("--disable-ipc-flooding-protection")
-        options.add_argument("--disable-renderer-backgrounding")
-        options.add_argument("--disable-backgrounding-occluded-windows")
-        options.add_argument("--disable-client-side-phishing-detection")
+        options.add_argument("--disable-extensions-file-access-check")
+        options.add_argument("--disable-extensions-http-throttling")
+        options.add_argument("--disable-extensions-except")
+        options.add_argument("--disable-background-networking")
         options.add_argument("--disable-sync")
         options.add_argument("--disable-default-apps")
+        options.add_argument("--disable-translate")
         options.add_argument("--hide-scrollbars")
         options.add_argument("--mute-audio")
+        options.add_argument("--no-first-run")
+        options.add_argument("--disable-infobars")
+        options.add_argument("--disable-features=TranslateUI,BlinkGenPropertyTrees")
+        options.add_argument("--disable-ipc-flooding-protection")
+        options.add_argument("--memory-pressure-off")
+        options.add_argument("--max_old_space_size=4096")
+        options.add_argument("--headless")
         
-        # Window size randomization
-        window_sizes = [
-            (1366, 768), (1920, 1080), (1440, 900), (1536, 864), (1280, 720)
+        common_resolutions = [
+            (1920, 1080), (1366, 768), (1536, 864), (1440, 900), (1280, 720)
         ]
-        width, height = random.choice(window_sizes)
+        width, height = random.choice(common_resolutions)
         options.add_argument(f"--window-size={width},{height}")
-        
-        # Random viewport
-        options.add_argument(f"--window-position={random.randint(0, 100)},{random.randint(0, 100)}")
-        
-        # Experimental options to avoid detection
-        options.add_experimental_option("excludeSwitches", ["enable-automation", "enable-logging"])
-        options.add_experimental_option('useAutomationExtension', False)
-        
-        # Additional prefs
+        pos_x, pos_y = random.randint(0, 100), random.randint(0, 100)
+        options.add_argument(f"--window-position={pos_x},{pos_y}")
+        languages = ["en-US,en", "en-GB,en", "en-CA,en"]
+        lang = random.choice(languages)
+        options.add_argument(f"--accept-lang={lang}")
+        timezones = ["Asia/Dubai", "Asia/Kuwait", "Asia/Qatar", "Asia/Riyadh"]
+        timezone = random.choice(timezones)
+        options.add_argument(f"--timezone={timezone}")
         prefs = {
             "profile.default_content_setting_values": {
                 "notifications": 2,
                 "media_stream": 2,
-            }
+                "geolocation": 2,
+                "mouse_cursor": 1,
+            },
+            "profile.managed_default_content_settings.images": 1,
+            "profile.managed_default_content_settings.javascript": 1,
+            "profile.password_manager_enabled": False,
+            "profile.default_content_settings.popups": 0,
+            "credentials_enable_service": False,
+            "profile.managed_default_content_settings.cookies": 1,
+            "profile.cookie_controls_mode": 0,
         }
         options.add_experimental_option("prefs", prefs)
-        
-        # Initialize driver
-        service = Service()  # Uses default chromedriver path
-        driver = webdriver.Chrome(service=service, options=options)
-        
-        # Additional anti-detection measures
-        driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-        
-        # Use selenium-stealth for additional protection
-        stealth(driver,
-                languages=["en-US", "en"],
-                vendor="Google Inc.",
-                platform="Win32",
-                webgl_vendor="Intel Inc.",
-                renderer="Intel Iris OpenGL Engine",
-                fix_hairline=True,
-        )
-        
-        # Set realistic timeouts
+        # Removed excludeSwitches and useAutomationExtension for undetected-chromedriver
+        driver = uc.Chrome(options=options, version_main=None)
+        stealth_js = """
+        Object.defineProperty(navigator, 'webdriver', {get: () => undefined,});
+        Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5],});
+        Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en'],});
+        const originalQuery = window.navigator.permissions.query;
+        window.navigator.permissions.query = (parameters) => (
+            parameters.name === 'notifications' ?
+                Promise.resolve({ state: Notification.permission }) :
+                originalQuery(parameters)
+        );
+        if (window.chrome) {
+            Object.defineProperty(window.chrome, 'runtime', {get: () => undefined,});
+        }
+        delete window.cdc_adoQpoasnfa76pfcZLmcfl_Array;
+        delete window.cdc_adoQpoasnfa76pfcZLmcfl_Promise;
+        delete window.cdc_adoQpoasnfa76pfcZLmcfl_Symbol;
+        """
+        driver.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument', {'source': stealth_js})
+        driver.execute_cdp_cmd('Emulation.setDeviceMetricsOverride', {
+            'width': width,
+            'height': height,
+            'deviceScaleFactor': round(random.uniform(1.0, 2.0), 1),
+            'mobile': False
+        })
+        driver.execute_cdp_cmd('Network.setUserAgentOverride', {
+            'userAgent': user_agent,
+            'acceptLanguage': lang,
+            'platform': random.choice(['Win32', 'MacIntel', 'Linux x86_64'])
+        })
         driver.implicitly_wait(10)
-        driver.set_page_load_timeout(30)
-        
+        driver.set_page_load_timeout(60)
+        driver.set_script_timeout(30)
+        print("[✅] Undetected driver setup complete")
         return driver
-        
     except Exception as e:
-        print(f"[Error] Failed to setup driver: {e}")
-        print("[*] Make sure ChromeDriver is installed and in PATH")
+        print(f"[Error] Failed to setup undetected driver: {e}")
         return None
+
+
 
 def extract_breadcrumb_category(driver, soup):
     """Extract breadcrumb category path"""
@@ -550,31 +579,39 @@ def extract_product_details(driver, url):
         print(f"[Error] Failed to scrape {url}: {e}")
         return product_data
 
+
 def download_product_images(product_data, download_images_flag=True):
-    if not download_images_flag or not product_data['image_urls'] or not product_data['product_name']:
+    if not download_images_flag or not product_data.get('image_urls') or not product_data.get('product_name'):
         return
+
     try:
-        folder_name = re.sub(r'[^\w\s-]', '', product_data['product_name'])[:50]
-        folder_name = re.sub(r'\s+', '_', folder_name)
-        if not folder_name.strip('_'):
-            folder_name = f"product_{hash(product_data['product_url']) % 10000}"
+        raw_name = product_data['product_name']
+        folder_name = re.sub(r'[^\w\s-]', '', raw_name)[:50]
+        folder_name = re.sub(r'\s+', '_', folder_name).strip('_')
+        if not folder_name:
+            folder_name = f"product_{abs(hash(product_data.get('product_url', ''))) % 10000}"
+
         product_folder = os.path.join('product_images', folder_name)
         os.makedirs(product_folder, exist_ok=True)
-        image_urls = product_data['image_urls'].split(', ')
+
+        image_urls = [url.strip() for url in product_data['image_urls'].split(',') if url.strip()]
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'User-Agent': 'Mozilla/5.0',
             'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.5',
             'Accept-Encoding': 'gzip, deflate',
             'DNT': '1',
             'Connection': 'keep-alive'
         }
+
         print(f"[*] Downloading images to: {product_folder}")
-        for i, img_url in enumerate(image_urls[:8], 1):
+        saved_files = []
+
+        for i, img_url in enumerate(image_urls[:8], 1):  # Limit to 8
             try:
                 response = requests.get(img_url, timeout=15, headers=headers)
                 if response.status_code == 200 and len(response.content) > 1000:
-                    content_type = response.headers.get('content-type', '')
+                    content_type = response.headers.get('content-type', '').lower()
                     if 'jpeg' in content_type or 'jpg' in content_type:
                         ext = '.jpg'
                     elif 'png' in content_type:
@@ -583,18 +620,28 @@ def download_product_images(product_data, download_images_flag=True):
                         ext = '.webp'
                     else:
                         ext = '.jpg'
-                    safe_name = re.sub(r'[^\w\s-]', '', product_data['product_name'])[:30]
-                    safe_name = re.sub(r'\s+', '_', safe_name)
-                    filename = f"{safe_name} pic {i}{ext}"
+
+                    safe_name = re.sub(r'[^\w\s-]', '', raw_name)[:30]
+                    safe_name = re.sub(r'\s+', '_', safe_name).strip('_')
+                    filename = f"{safe_name}_pic_{i}{ext}"
                     filepath = os.path.join(product_folder, filename)
+
                     with open(filepath, 'wb') as f:
                         f.write(response.content)
+
+                    saved_files.append(filepath)
                     print(f"[✓] Downloaded: {filename}")
+                else:
+                    print(f"[!] Skipped image {i}: bad response or empty content")
             except Exception as e:
-                print(f"[Warning] Failed to download image {i}: {e}")
+                print(f"[⚠️] Failed to download image {i}: {e}")
+
             time.sleep(random.uniform(1, 2))
+
+        product_data['saved_image_paths'] = saved_files
+
     except Exception as e:
-        print(f"[Error] Failed to download images: {e}")
+        print(f"[❌] Error while downloading images: {e}")
 
 def load_existing_data():
     """Load existing scraped data to prevent duplicates"""
@@ -690,10 +737,76 @@ def save_data_with_append(all_products, existing_products):
                 json_filename = backup_json
     
     return csv_filename, json_filename, len(combined_products)
+    
+def upload_to_github(file_path, repo, token, path_in_repo, commit_msg="Upload scraped data", branch="main", retries=3):
+    """
+    Uploads a local file to a GitHub repository using the REST API.
+    Handles both new uploads and file updates (via SHA).
+    """
+
+    if not os.path.isfile(file_path):
+        print(f"[❌] File not found: {file_path}")
+        return
+
+    file_size = os.path.getsize(file_path)
+    if file_size > 100 * 1024 * 1024:
+        print(f"[⚠️] Skipping {file_path} (file exceeds 100MB GitHub API limit)")
+        return
+
+    with open(file_path, "rb") as f:
+        content = f.read()
+
+    content_b64 = base64.b64encode(content).decode('utf-8')
+    api_url = f"https://api.github.com/repos/{repo}/contents/{path_in_repo}"
+    headers = {
+        "Authorization": f"token {token}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+
+    payload = {
+        "message": commit_msg,
+        "content": content_b64,
+        "branch": branch
+    }
+
+    # Check if file exists already (to update instead of create)
+    try:
+        response = requests.get(api_url, headers=headers)
+        if response.status_code == 200:
+            sha = response.json().get("sha")
+            if sha:
+                payload["sha"] = sha
+    except Exception as e:
+        print(f"[⚠️] Failed to check existing file SHA: {e}")
+
+    # Retry upload in case of intermittent network issues
+    for attempt in range(1, retries + 1):
+        try:
+            put_response = requests.put(api_url, headers=headers, json=payload)
+
+            if put_response.status_code in [200, 201]:
+                print(f"[📤] Uploaded {file_path} to GitHub at {path_in_repo}")
+                return
+            else:
+                print(f"[❌] Attempt {attempt}: Failed to upload {file_path}")
+                print(f"     Status: {put_response.status_code}")
+                print(f"     Response: {put_response.text}")
+
+        except Exception as ex:
+            print(f"[⚠️] Exception during upload (attempt {attempt}): {ex}")
+
+        if attempt < retries:
+            time.sleep(2)
+
+    print(f"[❌] Giving up on uploading {file_path} after {retries} attempts.")
+
 
 def main():
+    GITHUB_REPO = "os959345/webscrappe1"
+    GITHUB_TOKEN = "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" 
     MAX_PRODUCTS_PER_CATEGORY = None  
     DOWNLOAD_IMAGES = True  
+
     categories = {
         'Women Clothing': {
             'url': 'https://www.farfetch.com/ae/shopping/women/clothing-1/items.aspx',
@@ -824,85 +937,92 @@ def main():
             'path': 'Teen Boys > Clothing'
         },
     }
-    
-    
+
     print("=" * 80)
     print("🛍️  FARFETCH COMPREHENSIVE SCRAPER")
     print("=" * 80)
     print(f"[*] Products per category: {MAX_PRODUCTS_PER_CATEGORY}")
     print(f"[*] Download images: {'Yes' if DOWNLOAD_IMAGES else 'No'}")
-    
+
     # Load existing data to prevent duplicates
     existing_products, existing_urls = load_existing_data()
     print(f"[*] Found {len(existing_urls)} existing product URLs to skip")
-    
-    # Setup driver
+
     driver = setup_driver()
     if not driver:
         print("[❌] Failed to initialize browser driver")
         return
-    
+
     all_products = []
     skipped_duplicates = 0
-    
+
     try:
         for category_name, category_info in categories.items():
             print(f"\n{'='*50}")
             print(f"📂 SCRAPING {category_name.upper()} CATEGORY")
             print(f"{'='*50}")
-            
-            # Collect product links - no limit when MAX_PRODUCTS_PER_CATEGORY is None
+
             product_links = collect_product_links(driver, category_info['url'], MAX_PRODUCTS_PER_CATEGORY)
-            
             if not product_links:
                 print(f"[⚠] No products found in {category_name} category")
                 continue
-            
+
             print(f"[✅] Found {len(product_links)} products in {category_name}")
-            
-            # Filter out already scraped URLs
+
             new_product_links = [url for url in product_links if url not in existing_urls]
-            skipped_in_category = len(product_links) - len(new_product_links)
-            
-            if skipped_in_category > 0:
-                print(f"[⏭️] Skipping {skipped_in_category} already scraped products")
-                skipped_duplicates += skipped_in_category
-            
+            skipped = len(product_links) - len(new_product_links)
+            if skipped > 0:
+                print(f"[⏭️] Skipping {skipped} already scraped products")
+                skipped_duplicates += skipped
+
             if not new_product_links:
                 print(f"[ℹ️] All products in {category_name} already scraped, skipping")
                 continue
-            
+
             print(f"[🆕] Scraping {len(new_product_links)} new products")
-            
-            # Scrape each new product
+
             for i, url in enumerate(new_product_links, 1):
                 print(f"\n[*] Processing {category_name} product {i}/{len(new_product_links)}")
-                
                 product_data = extract_product_details(driver, url)
-                
-                if product_data['product_name'] or product_data['brand']:
+
+                if product_data.get('product_name') or product_data.get('brand'):
                     all_products.append(product_data)
-                    
-                    # Download images
+
                     if DOWNLOAD_IMAGES:
                         download_product_images(product_data, True)
-                    
+
+                        # Immediately upload images after download
+                        image_paths = product_data.get('saved_image_paths', [])
+                        if image_paths:
+                            raw_name = product_data['product_name']
+                            folder_name = re.sub(r'[^\w\s-]', '', raw_name)[:50]
+                            folder_name = re.sub(r'\s+', '_', folder_name).strip('_')
+                            if not folder_name:
+                                folder_name = f"product_{abs(hash(product_data.get('product_url', ''))) % 10000}"
+
+                            for path in image_paths:
+                                try:
+                                    repo_path = f"data/images/{folder_name}/{os.path.basename(path)}"
+                                    upload_to_github(path, GITHUB_REPO, GITHUB_TOKEN, repo_path)
+                                except Exception as e:
+                                    print(f"[⚠️] Failed to upload image {path}: {e}")
+
+                        
+
                     print(f"[✅] Successfully scraped product {i}")
                 else:
                     print(f"[⚠] Failed to extract data for product {i}")
-                
-                # Delay between products
+
                 if i < len(new_product_links):
                     delay = random.uniform(8, 15)
                     print(f"[💤] Waiting {delay:.1f} seconds...")
                     time.sleep(delay)
-            
-            # Delay between categories
+
             if category_name != list(categories.keys())[-1]:
                 delay = random.uniform(10, 20)
                 print(f"[💤] Waiting {delay:.1f} seconds before next category...")
                 time.sleep(delay)
-    
+
     except KeyboardInterrupt:
         print("\n[⚠] Scraping interrupted by user")
     except Exception as e:
@@ -910,11 +1030,16 @@ def main():
     finally:
         driver.quit()
         print("\n[✅] Browser closed successfully")
-    
-    # Save results with append functionality
+
     if all_products:
         csv_filename, json_filename, total_products = save_data_with_append(all_products, existing_products)
+         # Make sure this is set correctly
+
+        upload_to_github(csv_filename, GITHUB_REPO, GITHUB_TOKEN, f"data/{csv_filename}")
+        upload_to_github(json_filename, GITHUB_REPO, GITHUB_TOKEN, f"data/{json_filename}")
+
         
+
         print("\n" + "=" * 60)
         print("📊 FINAL SCRAPING RESULTS")
         print("=" * 60)
@@ -923,25 +1048,24 @@ def main():
         print(f"📈 Total products in database: {total_products}")
         print(f"💾 CSV file: {csv_filename}")
         print(f"💾 JSON file: {json_filename}")
-        
+
         if DOWNLOAD_IMAGES:
             print(f"🖼️ Images saved to: ./product_images/ folders")
-        
-        # Show sample of new data
-        if all_products:
-            print(f"\n📋 Sample of newly scraped data:")
-            sample = all_products[0]
-            print(f"   Brand: {sample['brand']}")
-            print(f"   Product: {sample['product_name'][:40]}...")
-            print(f"   Category: {sample['category']}")
-            print(f"   Price AED: {sample['price_aed']}")
-            print(f"   Price USD: {sample['price_usd']}")
-            print(f"   Images: {len(sample['image_urls'].split(', ')) if sample['image_urls'] else 0}")
-        
+
+        print(f"\n📋 Sample of newly scraped data:")
+        sample = all_products[0]
+        print(f"   Brand: {sample['brand']}")
+        print(f"   Product: {sample['product_name'][:40]}...")
+        print(f"   Category: {sample['category']}")
+        print(f"   Price AED: {sample['price_aed']}")
+        print(f"   Price USD: {sample['price_usd']}")
+        print(f"   Images: {len(sample['image_urls'].split(', ')) if sample['image_urls'] else 0}")
+
         print("\n🎉 Scraping completed successfully!")
-        
+
     else:
         print("\n[ℹ️] No new products were scraped (all were duplicates or failed)")
+
 
 if __name__ == "__main__":
     main()
