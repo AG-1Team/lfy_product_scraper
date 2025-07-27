@@ -802,7 +802,7 @@ def upload_to_github(file_path, repo, token, path_in_repo, commit_msg="Upload sc
 
 
 def main():
-    GITHUB_REPO = "os959345/webscrappe1"
+    GITHUB_REPO = "os959345/webscrapper1"
     GITHUB_TOKEN = "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" 
     MAX_PRODUCTS_PER_CATEGORY = None  
     DOWNLOAD_IMAGES = True  
