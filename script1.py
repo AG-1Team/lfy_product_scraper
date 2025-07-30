@@ -803,9 +803,9 @@ def upload_to_github(file_path, repo, token, path_in_repo, commit_msg="Upload sc
 
 def main():
     GITHUB_REPO = "os959345/webscrapper1"
-    GITHUB_TOKEN = "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" 
-    MAX_PRODUCTS_PER_CATEGORY = None  
-    DOWNLOAD_IMAGES = True  
+    GITHUB_TOKEN = "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"
+    MAX_PRODUCTS_PER_CATEGORY = None
+    DOWNLOAD_IMAGES = True
 
     categories = {
         'Women Clothing': {
@@ -944,7 +944,6 @@ def main():
     print(f"[*] Products per category: {MAX_PRODUCTS_PER_CATEGORY}")
     print(f"[*] Download images: {'Yes' if DOWNLOAD_IMAGES else 'No'}")
 
-    # Load existing data to prevent duplicates
     existing_products, existing_urls = load_existing_data()
     print(f"[*] Found {len(existing_urls)} existing product URLs to skip")
 
@@ -968,18 +967,17 @@ def main():
                 continue
 
             print(f"[✅] Found {len(product_links)} products in {category_name}")
-
             new_product_links = [url for url in product_links if url not in existing_urls]
             skipped = len(product_links) - len(new_product_links)
-            if skipped > 0:
-                print(f"[⏭️] Skipping {skipped} already scraped products")
-                skipped_duplicates += skipped
+            skipped_duplicates += skipped
+            print(f"[⏭️] Skipping {skipped} already scraped products")
 
             if not new_product_links:
                 print(f"[ℹ️] All products in {category_name} already scraped, skipping")
                 continue
 
             print(f"[🆕] Scraping {len(new_product_links)} new products")
+            category_products = []
 
             for i, url in enumerate(new_product_links, 1):
                 print(f"\n[*] Processing {category_name} product {i}/{len(new_product_links)}")
@@ -987,27 +985,10 @@ def main():
 
                 if product_data.get('product_name') or product_data.get('brand'):
                     all_products.append(product_data)
+                    category_products.append(product_data)
 
                     if DOWNLOAD_IMAGES:
                         download_product_images(product_data, True)
-
-                        # Immediately upload images after download
-                        image_paths = product_data.get('saved_image_paths', [])
-                        if image_paths:
-                            raw_name = product_data['product_name']
-                            folder_name = re.sub(r'[^\w\s-]', '', raw_name)[:50]
-                            folder_name = re.sub(r'\s+', '_', folder_name).strip('_')
-                            if not folder_name:
-                                folder_name = f"product_{abs(hash(product_data.get('product_url', ''))) % 10000}"
-
-                            for path in image_paths:
-                                try:
-                                    repo_path = f"data/images/{folder_name}/{os.path.basename(path)}"
-                                    upload_to_github(path, GITHUB_REPO, GITHUB_TOKEN, repo_path)
-                                except Exception as e:
-                                    print(f"[⚠️] Failed to upload image {path}: {e}")
-
-                        
 
                     print(f"[✅] Successfully scraped product {i}")
                 else:
@@ -1018,6 +999,38 @@ def main():
                     print(f"[💤] Waiting {delay:.1f} seconds...")
                     time.sleep(delay)
 
+            # ===== 📤 UPLOAD BLOCK FOR THIS CATEGORY =====
+            if category_products:
+                # Save updated CSV/JSON
+                csv_filename, json_filename, _ = save_data_with_append(category_products, existing_products)
+
+                # Upload CSV and JSON
+                upload_to_github(csv_filename, GITHUB_REPO, GITHUB_TOKEN, f"data/{csv_filename}")
+                upload_to_github(json_filename, GITHUB_REPO, GITHUB_TOKEN, f"data/{json_filename}")
+
+                # Upload all images from this category
+                if DOWNLOAD_IMAGES:
+                    print(f"\n[⬆] Uploading product images for category: {category_name}")
+                    for product in category_products:
+                        image_paths = product.get('saved_image_paths', [])
+                        if not image_paths:
+                            continue
+
+                        raw_name = product['product_name']
+                        folder_name = re.sub(r'[^\w\s-]', '', raw_name)[:50]
+                        folder_name = re.sub(r'\s+', '_', folder_name).strip('_')
+                        if not folder_name:
+                            folder_name = f"product_{abs(hash(product.get('product_url', ''))) % 10000}"
+
+                        for path in image_paths:
+                            try:
+                                repo_path = f"data/images/{folder_name}/{os.path.basename(path)}"
+                                upload_to_github(path, GITHUB_REPO, GITHUB_TOKEN, repo_path)
+                            except Exception as e:
+                                print(f"[⚠️] Failed to upload image {path}: {e}")
+                    print("[✅] Image uploads complete for category.")
+
+            # Delay before next category
             if category_name != list(categories.keys())[-1]:
                 delay = random.uniform(10, 20)
                 print(f"[💤] Waiting {delay:.1f} seconds before next category...")
@@ -1032,39 +1045,25 @@ def main():
         print("\n[✅] Browser closed successfully")
 
     if all_products:
-        csv_filename, json_filename, total_products = save_data_with_append(all_products, existing_products)
-         # Make sure this is set correctly
-
-        upload_to_github(csv_filename, GITHUB_REPO, GITHUB_TOKEN, f"data/{csv_filename}")
-        upload_to_github(json_filename, GITHUB_REPO, GITHUB_TOKEN, f"data/{json_filename}")
-
-        
-
         print("\n" + "=" * 60)
         print("📊 FINAL SCRAPING RESULTS")
         print("=" * 60)
         print(f"🆕 New products scraped: {len(all_products)}")
         print(f"⏭️ Duplicates skipped: {skipped_duplicates}")
-        print(f"📈 Total products in database: {total_products}")
-        print(f"💾 CSV file: {csv_filename}")
-        print(f"💾 JSON file: {json_filename}")
-
-        if DOWNLOAD_IMAGES:
-            print(f"🖼️ Images saved to: ./product_images/ folders")
-
-        print(f"\n📋 Sample of newly scraped data:")
         sample = all_products[0]
+        print(f"\n📋 Sample:")
         print(f"   Brand: {sample['brand']}")
         print(f"   Product: {sample['product_name'][:40]}...")
         print(f"   Category: {sample['category']}")
         print(f"   Price AED: {sample['price_aed']}")
         print(f"   Price USD: {sample['price_usd']}")
         print(f"   Images: {len(sample['image_urls'].split(', ')) if sample['image_urls'] else 0}")
-
+        if DOWNLOAD_IMAGES:
+            print(f"🖼️ Images saved to: ./product_images/")
         print("\n🎉 Scraping completed successfully!")
-
     else:
         print("\n[ℹ️] No new products were scraped (all were duplicates or failed)")
+
 
 
 if __name__ == "__main__":
