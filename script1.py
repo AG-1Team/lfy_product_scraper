@@ -733,16 +733,30 @@ def extract_product_details(driver, url):
         print(f"[Error] Failed to extract product details: {e}")
         return None
     
+import os
+import re
+import requests
+import time
+import random
+
 def download_product_images(product_data, download_images_flag=True):
-    if not download_images_flag or not product_data['image_urls'] or not product_data['product_name']:
+    if not download_images_flag or not product_data.get('image_urls') or not product_data.get('product_name'):
         return
+
     try:
+        # Root folder is the Railway-mounted volume
+        base_image_dir = "/app/data/product_images"
+
+        # Sanitize product folder name
         folder_name = re.sub(r'[^\w\s-]', '', product_data['product_name'])[:50]
         folder_name = re.sub(r'\s+', '_', folder_name)
         if not folder_name.strip('_'):
             folder_name = f"product_{hash(product_data['product_url']) % 10000}"
-        product_folder = os.path.join('product_images', folder_name)
+
+        # Full path: /app/data/product_images/FolderName
+        product_folder = os.path.join(base_image_dir, folder_name)
         os.makedirs(product_folder, exist_ok=True)
+
         image_urls = product_data['image_urls'].split(', ')
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
@@ -752,6 +766,7 @@ def download_product_images(product_data, download_images_flag=True):
             'DNT': '1',
             'Connection': 'keep-alive'
         }
+
         print(f"[*] Downloading images to: {product_folder}")
         for i, img_url in enumerate(image_urls[:8], 1):
             try:
@@ -766,18 +781,24 @@ def download_product_images(product_data, download_images_flag=True):
                         ext = '.webp'
                     else:
                         ext = '.jpg'
+
                     safe_name = re.sub(r'[^\w\s-]', '', product_data['product_name'])[:30]
                     safe_name = re.sub(r'\s+', '_', safe_name)
-                    filename = f"{safe_name} pic {i}{ext}"
+                    filename = f"{safe_name}_pic_{i}{ext}"
                     filepath = os.path.join(product_folder, filename)
+
                     with open(filepath, 'wb') as f:
                         f.write(response.content)
+
                     print(f"[✓] Downloaded: {filename}")
             except Exception as e:
                 print(f"[Warning] Failed to download image {i}: {e}")
+
             time.sleep(random.uniform(1, 2))
+
     except Exception as e:
         print(f"[Error] Failed to download images: {e}")
+
 
 def load_existing_data():
     """Load existing scraped data to prevent duplicates"""
@@ -809,20 +830,25 @@ def load_existing_data():
     return existing_products, existing_urls
 
 def save_data_with_append(all_products, existing_products):
-    """Save data by appending to existing files"""
+    """Save data by appending to existing files in /app/data (Railway volume)"""
+    
+    # Volume base directory
+    output_dir = "/app/data"
+    os.makedirs(output_dir, exist_ok=True)
+    
     # Create DataFrame for new products only
     new_df = pd.DataFrame(all_products)
     
-    # CSV filename
-    csv_filename = 'farfetch_products.csv'
-    json_filename = 'farfetch_products.json'
+    # Set file paths inside volume
+    csv_filename = os.path.join(output_dir, 'farfetch_products.csv')
+    json_filename = os.path.join(output_dir, 'farfetch_products.json')
     
     # Try to append to existing CSV
     max_retries = 3
     for attempt in range(max_retries):
         try:
-            if existing_products and os.path.getsize(csv_filename) > 0:
-    # Load existing CSV and append new data
+            if existing_products and os.path.exists(csv_filename) and os.path.getsize(csv_filename) > 0:
+                # Load existing CSV and append new data
                 existing_df = pd.read_csv(csv_filename, encoding='utf-8-sig')
                 combined_df = pd.concat([existing_df, new_df], ignore_index=True)
                 combined_df.to_csv(csv_filename, index=False, encoding='utf-8-sig')
@@ -839,7 +865,7 @@ def save_data_with_append(all_products, existing_products):
             else:
                 # Last resort: create timestamped backup
                 timestamp = time.strftime("%Y%m%d_%H%M%S")
-                backup_csv = f'farfetch_products_{timestamp}.csv'
+                backup_csv = os.path.join(output_dir, f'farfetch_products_{timestamp}.csv')
                 if existing_products:
                     existing_df = pd.read_csv(csv_filename, encoding='utf-8-sig')
                     combined_df = pd.concat([existing_df, new_df], ignore_index=True)
@@ -865,7 +891,7 @@ def save_data_with_append(all_products, existing_products):
                 time.sleep(2)
             else:
                 timestamp = time.strftime("%Y%m%d_%H%M%S")
-                backup_json = f'farfetch_products_{timestamp}.json'
+                backup_json = os.path.join(output_dir, f'farfetch_products_{timestamp}.json')
                 with open(backup_json, 'w', encoding='utf-8') as f:
                     json.dump(combined_products, f, indent=2, ensure_ascii=False)
                 print(f"[⚠] Could not save to {json_filename} after {max_retries} attempts")
@@ -1119,7 +1145,8 @@ def main():
             print(f"💾 Files saved: {csv_filename}, {json_filename}")
             
             if DOWNLOAD_IMAGES:
-                print(f"🖼️ Images saved to: ./product_images/")
+                print(f"🖼️ Images saved to: /app/data/product_images/")
+                print(f"📁 CSV/JSON saved in: /app/data/")
             
             # Group and display sample data
             print("\n📋 Sample of scraped data:")
