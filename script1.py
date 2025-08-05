@@ -900,8 +900,46 @@ def save_data_with_append(all_products, existing_products):
     
     return csv_filename, json_filename, len(combined_products)
 
+def upload_to_github():
+    """
+    Commit and push scraped data to GitHub repository.
+    Target repo: os959345/webscrapper1
+    Requires GITHUB_TOKEN to be set in the environment.
+    """
+    print("\n🚀 Uploading data to GitHub repository: os959345/webscrapper1")
+
+    try:
+        # Set Git config (optional but helpful)
+        subprocess.run(["git", "config", "--global", "user.email", "bot@app.com"], check=True)
+        subprocess.run(["git", "config", "--global", "user.name", "scraper-bot"], check=True)
+
+        # Stage all changes
+        subprocess.run(["git", "add", "."], check=True)
+
+        # Create commit
+        commit_msg = f"Add scraped data - {time.strftime('%Y-%m-%d %H:%M:%S')}"
+        subprocess.run(["git", "commit", "-m", commit_msg], check=True)
+
+        # Read GitHub token from environment
+        token = os.getenv("GITHUB_TOKEN")
+        if not token:
+            raise EnvironmentError("Missing GITHUB_TOKEN environment variable.")
+
+        # Construct repo URL with token
+        repo_url = f"https://{token}@github.com/os959345/webscrapper1.git"
+
+        # Push to main branch
+        subprocess.run(["git", "push", repo_url, "main"], check=True)
+
+        print("[✅] GitHub push completed successfully.")
+
+    except subprocess.CalledProcessError as e:
+        print(f"[❌] Git command failed: {e}")
+    except Exception as e:
+        print(f"[❌] GitHub upload error: {e}")
+
 def main():
-    """Main scraping function with enhanced error handling and data display"""
+    """Main scraping function with enhanced error handling and GitHub upload"""
     # Constants
     MAX_PRODUCTS_PER_CATEGORY = None  
     DOWNLOAD_IMAGES = True
@@ -1036,158 +1074,144 @@ def main():
             'path': 'Teen Boys > Clothing'
         },
     }
-    
-    
+
     try:
         print("=" * 80)
         print("🛍️  FARFETCH COMPREHENSIVE SCRAPER")
         print("=" * 80)
         print(f"[*] Products per category: {MAX_PRODUCTS_PER_CATEGORY}")
         print(f"[*] Download images: {'Yes' if DOWNLOAD_IMAGES else 'No'}")
-        
-        # Load existing data to prevent duplicates
+
+        # Load existing data
         existing_products, existing_urls = load_existing_data()
         print(f"[*] Found {len(existing_urls)} existing product URLs to skip")
-        
-        # Setup driver
+
+        # Setup browser driver
         driver = setup_driver()
         if not driver:
             print("[❌] Failed to initialize browser driver")
             return
-        
+
         all_products = []
         skipped_duplicates = 0
-        
-        # Main scraping loop
+
         for category_name, category_info in categories.items():
             try:
                 print(f"\n{'='*50}")
                 print(f"📂 SCRAPING {category_name.upper()} CATEGORY")
                 print(f"{'='*50}")
-                
-                # Collect and filter product links
+
                 product_links = collect_product_links(driver, category_info['url'], MAX_PRODUCTS_PER_CATEGORY)
                 if not product_links:
-                    print(f"[⚠] No products found in {category_name} category")
+                    print(f"[⚠] No products found in {category_name}")
                     continue
-                
-                new_product_links = [url for url in product_links if url not in existing_urls]
-                skipped_in_category = len(product_links) - len(new_product_links)
-                skipped_duplicates += skipped_in_category
-                
-                if not new_product_links:
+
+                new_links = [url for url in product_links if url not in existing_urls]
+                skipped_duplicates += len(product_links) - len(new_links)
+
+                if not new_links:
                     print(f"[ℹ️] All products in {category_name} already scraped")
                     continue
-                
-                # Process each product
-                for i, url in enumerate(new_product_links, 1):
+
+                for i, url in enumerate(new_links, 1):
                     try:
-                        print(f"\n[*] Processing product {i}/{len(new_product_links)}")
+                        print(f"\n[*] Processing product {i}/{len(new_links)}")
                         product_data = extract_product_details(driver, url)
-                        
+
                         if product_data and isinstance(product_data, dict):
-                            # Convert single dict to list for consistency
-                            all_products.append(product_data)  # Use append instead of extend
+                            all_products.append(product_data)
                             print(f"[✅] Successfully scraped product")
-                            
+
                             if DOWNLOAD_IMAGES and product_data.get('image_urls'):
                                 try:
                                     download_product_images(product_data, True)
                                 except Exception as img_error:
-                                    print(f"[⚠] Error downloading images: {str(img_error)}")
+                                    print(f"[⚠] Error downloading images: {img_error}")
                         else:
                             print(f"[⚠] No valid product data returned")
-                        
-                        # Random delay between products
-                        if i < len(new_product_links):
+
+                        if i < len(new_links):
                             delay = random.uniform(8, 15)
                             print(f"[💤] Waiting {delay:.1f}s...")
                             time.sleep(delay)
-                            
+
                     except Exception as e:
-                        print(f"[❌] Error processing product: {str(e)}")
-                        continue       
-                # Random delay between categories
+                        print(f"[❌] Error processing product: {e}")
+                        continue
+
                 if category_name != list(categories.keys())[-1]:
                     delay = random.uniform(10, 20)
                     print(f"[💤] Waiting {delay:.1f}s before next category...")
                     time.sleep(delay)
-                    
+
             except Exception as e:
-                print(f"[❌] Error processing category {category_name}: {str(e)}")
+                print(f"[❌] Error in category {category_name}: {e}")
                 continue
-                
+
     except KeyboardInterrupt:
         print("\n[⚠] Scraping interrupted by user")
     except Exception as e:
         print(f"\n[❌] Unexpected error: {e}")
         import traceback
-        print(f"[DEBUG] Traceback: {traceback.format_exc()}")
+        print(traceback.format_exc())
     finally:
         try:
             driver.quit()
             print("\n[✅] Browser closed successfully")
         except:
             print("\n[⚠] Browser was already closed")
-    
-    # Save and display results
+
+    # Save data
     if all_products:
         try:
-            csv_filename, json_filename, total_products = save_data_with_append(all_products, existing_products)
-            
-            # Display results summary
+            csv_filename, json_filename, total = save_data_with_append(all_products, existing_products)
+
             print("\n" + "=" * 60)
             print("📊 FINAL SCRAPING RESULTS")
             print("=" * 60)
             print(f"🆕 New products scraped: {len(all_products)}")
             print(f"⏭️ Duplicates skipped: {skipped_duplicates}")
-            print(f"📈 Total in database: {total_products}")
+            print(f"📈 Total in database: {total}")
             print(f"💾 Files saved: {csv_filename}, {json_filename}")
-            
             if DOWNLOAD_IMAGES:
                 print(f"🖼️ Images saved to: /app/data/product_images/")
                 print(f"📁 CSV/JSON saved in: /app/data/")
-            
-            # Group and display sample data
-            print("\n📋 Sample of scraped data:")
+
+            # Sample preview
             try:
-                products_by_name = defaultdict(list)
-                
-                # Group products by name
-                for product in all_products:
-                    if isinstance(product, dict):
-                        name = product.get('product_name', 'Unknown')
-                        products_by_name[name].append(product)
-                
-                # Show products with multiple regions first
-                multi_region = {name: data for name, data in products_by_name.items() 
-                              if len(data) > 1}
-                
+                from collections import defaultdict
+                grouped = defaultdict(list)
+                for prod in all_products:
+                    if isinstance(prod, dict):
+                        grouped[prod.get("product_name", "Unknown")].append(prod)
+
+                multi_region = {k: v for k, v in grouped.items() if len(v) > 1}
                 if multi_region:
                     print("\n🌍 Products with multiple regional prices:")
                     for idx, (name, variants) in enumerate(list(multi_region.items())[:3]):
                         print(f"\n{idx + 1}. {name[:45]}...")
-                        for variant in variants:
-                            region = variant.get('region', 'Unknown')
-                            price = variant.get('price_local', 'N/A')
-                            print(f"   {region}: {price}")
+                        for v in variants:
+                            print(f"   {v.get('region', 'Unknown')}: {v.get('price_local', 'N/A')}")
                 else:
                     print("\n💰 Sample product prices:")
-                    for idx, product in enumerate(all_products[:5]):
-                        if isinstance(product, dict):
-                            name = product.get('product_name', 'N/A')
-                            price = product.get('price_local', 'N/A')
-                            region = product.get('region', 'N/A')
-                            print(f"{idx + 1}. {name[:40]}... ({region}: {price})")
-                            
-            except Exception as e:
-                print(f"[⚠] Error displaying results: {str(e)}")
-                
+                    for idx, prod in enumerate(all_products[:5]):
+                        print(f"{idx+1}. {prod.get('product_name', 'N/A')[:40]}... ({prod.get('region')}: {prod.get('price_local')})")
+
+            except Exception as display_error:
+                print(f"[⚠] Error displaying results: {display_error}")
+
             print("\n🎉 Scraping completed successfully!")
-            
-        except Exception as e:
-            print(f"\n[❌] Error saving/displaying results: {str(e)}")
-            print(f"[DEBUG] Error traceback: {traceback.format_exc()}")
+
+            # Upload to GitHub
+            try:
+                upload_to_github()
+            except Exception as git_error:
+                print(f"[⚠] GitHub upload failed: {git_error}")
+
+        except Exception as save_error:
+            print(f"[❌] Error saving data: {save_error}")
+            import traceback
+            print(traceback.format_exc())
     else:
         print("\n[ℹ️] No new products were scraped")
 
