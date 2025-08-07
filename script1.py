@@ -25,7 +25,7 @@ import base64
 import os
 
 
-GITHUB_REPO = "os959345/webscrapper"
+GITHUB_REPO = "os959345/webscrapper1"
 GITHUB_TOKEN = ""  # Insert your GitHub PAT here
 
 import base64
