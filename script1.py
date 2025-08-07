@@ -26,7 +26,7 @@ import os
 
 
 GITHUB_REPO = "os959345/webscrapper1"
-GITHUB_TOKEN = "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"
+GITHUB_TOKEN = ""  # Insert your GitHub PAT here
 
 import base64
 import os
@@ -911,61 +911,51 @@ def load_existing_data():
     
     return existing_products, existing_urls
 
-def save_data_with_append(all_products, existing_products):
+def save_data_with_append(all_products):
     """Save data by appending to existing files in /app/data (Railway volume)"""
-    
+
     # Volume base directory
     output_dir = "/app/data"
     os.makedirs(output_dir, exist_ok=True)
-    
+
     # Create DataFrame for new products only
     new_df = pd.DataFrame(all_products)
-    
-    # Set base filenames (no versioning here yet)
+
+    # Set base filenames
     base_name = 'farfetch_products'
     csv_filename = os.path.join(output_dir, f"{base_name}.csv")
     json_filename = os.path.join(output_dir, f"{base_name}.json")
-    
+
     # Try to append to existing CSV
     max_retries = 3
     for attempt in range(max_retries):
         try:
-            if existing_products and os.path.exists(csv_filename) and os.path.getsize(csv_filename) > 0:
-                # Load existing CSV and append new data
+            if os.path.exists(csv_filename) and os.path.getsize(csv_filename) > 0:
                 existing_df = pd.read_csv(csv_filename, encoding='utf-8-sig')
                 combined_df = pd.concat([existing_df, new_df], ignore_index=True)
                 combined_df.to_csv(csv_filename, index=False, encoding='utf-8-sig')
-                print(f"[✅] Successfully appended {len(all_products)} new products to {csv_filename}")
+                print(f"[✅] Appended {len(all_products)} new products to {csv_filename}")
             else:
-                # No existing data, create new file
                 new_df.to_csv(csv_filename, index=False, encoding='utf-8-sig')
-                print(f"[✅] Successfully created new {csv_filename} with {len(all_products)} products")
+                print(f"[✅] Created new {csv_filename} with {len(all_products)} products")
             break
         except PermissionError:
             if attempt < max_retries - 1:
                 print(f"[⏳] Permission denied, retrying in 2 seconds... (attempt {attempt + 1}/{max_retries})")
                 time.sleep(2)
             else:
-                # Last resort: create versioned CSV file
                 versioned_csv = get_versioned_filename(output_dir, base_name, "csv")
-                if existing_products and os.path.exists(csv_filename):
-                    existing_df = pd.read_csv(csv_filename, encoding='utf-8-sig')
-                    combined_df = pd.concat([existing_df, new_df], ignore_index=True)
-                    combined_df.to_csv(versioned_csv, index=False, encoding='utf-8-sig')
-                else:
-                    new_df.to_csv(versioned_csv, index=False, encoding='utf-8-sig')
+                new_df.to_csv(versioned_csv, index=False, encoding='utf-8-sig')
                 print(f"[⚠] Could not save to {csv_filename} after {max_retries} attempts")
                 print(f"[💾] Saved to versioned file: {versioned_csv}")
-                print(f"[💡] Please close any open Excel files and manually rename if needed")
                 csv_filename = versioned_csv
 
-    # Save JSON (combine existing + new)
-    combined_products = existing_products + all_products
+    # Save new JSON version (overwrite)
     for attempt in range(max_retries):
         try:
             with open(json_filename, 'w', encoding='utf-8') as f:
-                json.dump(combined_products, f, indent=2, ensure_ascii=False)
-            print(f"[✅] Successfully saved to {json_filename}")
+                json.dump(all_products, f, indent=2, ensure_ascii=False)
+            print(f"[✅] Saved JSON with {len(all_products)} products to {json_filename}")
             break
         except PermissionError:
             if attempt < max_retries - 1:
@@ -974,12 +964,13 @@ def save_data_with_append(all_products, existing_products):
             else:
                 versioned_json = get_versioned_filename(output_dir, base_name, "json")
                 with open(versioned_json, 'w', encoding='utf-8') as f:
-                    json.dump(combined_products, f, indent=2, ensure_ascii=False)
+                    json.dump(all_products, f, indent=2, ensure_ascii=False)
                 print(f"[⚠] Could not save to {json_filename} after {max_retries} attempts")
                 print(f"[💾] Saved to versioned file: {versioned_json}")
                 json_filename = versioned_json
 
-    return csv_filename, json_filename, len(combined_products)
+    return csv_filename, json_filename, len(all_products)
+
 
 def get_versioned_filename(base_path, base_name, ext):
     """
@@ -1227,7 +1218,7 @@ def main():
     # Save and display results
     if all_products:
         try:
-            csv_filename, json_filename, total_products = save_data_with_append(all_products, existing_products)
+            csv_filename, json_filename, total_products = save_data_with_append(all_products)
             
             # Display results summary
             print("\n" + "=" * 60)
