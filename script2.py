@@ -266,7 +266,7 @@ def enhanced_collect_product_links(driver, category_url, max_products=5):
         indices = list(range(len(product_containers)))
         random.shuffle(indices)
         for i in indices:
-            if len(product_links) >= max_products:
+            if max_products is not None and len(product_links) >= max_products:
                 break
             container = product_containers[i]
             try:
@@ -479,3 +479,643 @@ def extract_size_and_fit(soup):
             '[class*="fit"]',
             '[class*="measurement"]',
             '.fit-guide',
+            '.size-guide',
+            '.measurement-info',
+            '.product-fit',
+            '.size-chart'
+        ]
+        
+        fit_info = []
+        for selector in fit_selectors:
+            try:
+                fit_elements = soup.select(selector)
+                for elem in fit_elements:
+                    fit_text = elem.get_text(strip=True)
+                    if fit_text and len(fit_text) > 10 and 'model' not in fit_text.lower():
+                        fit_info.append(fit_text)
+            except:
+                continue
+        
+        if fit_info:
+            size_fit_info.append(f"Fit Guide: {' | '.join(fit_info)}")
+        
+        # Look for Size & Fit accordion section - Ounass specific
+        for section in soup.find_all(['section', 'div'], {'class': ['accordion', 'size-fit', 'product-details', 'product-info']}):
+            # Look for size & fit related text
+            section_text = section.get_text(strip=True).lower()
+            if any(keyword in section_text for keyword in ['size', 'fit', 'measurement', 'guide']):
+                panel_text = ' '.join(section.stripped_strings)
+                if panel_text:
+                    if "no fitting details" in panel_text.lower() or "no size guide" in panel_text.lower():
+                        size_fit_info.append("Size & Fit: No fitting details available")
+                    else:
+                        size_fit_info.append(f"Size & Fit Details: {panel_text}")
+                break
+        
+        return ' | '.join(size_fit_info) if size_fit_info else ''
+        
+    except Exception as e:
+        print(f"[Warning] Error extracting size/fit: {e}")
+        return ''
+
+def extract_product_details(driver, url):
+    product_data = {
+        'product_url': url,
+        'brand': '',
+        'product_name': '',
+        'product_details': '',
+        'category': '',
+        'image_urls': '',
+        'original_price': '',
+        'sale_price': '',
+        'discount': '',
+        'price_aed': '',
+        'price_usd': '',
+        'price_gbp': '',
+        'price_eur': '',
+        'size_and_fit': ''
+    }
+    try:
+        print(f"\n[*] Scraping: {url}")
+        driver.get(url)
+        
+        # Wait for critical elements to load
+        WebDriverWait(driver, 45).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, "h1.PDPMobile-name, h1.product-name"))
+        )
+        
+        # Allow time for dynamic content to load
+        time.sleep(2)
+        
+        html = driver.page_source
+        soup = BeautifulSoup(html, 'html.parser')
+
+        # BRAND
+        brand_elem = soup.select_one('a.PDPMobile-brand, .product-brand, [data-testid="brand-name"]')
+        if brand_elem:
+            product_data['brand'] = brand_elem.get_text(strip=True)
+
+        # PRODUCT NAME
+        name_elem = soup.select_one('h1.PDPMobile-name, h1.product-name, [data-testid="product-name"]')
+        if name_elem:
+            product_data['product_name'] = name_elem.get_text(strip=True)
+            # Remove brand name if included
+            if product_data['brand'] and product_data['brand'] in product_data['product_name']:
+                product_data['product_name'] = product_data['product_name'].replace(product_data['brand'], '').strip()
+
+        # PRICE
+        price_elem = soup.select_one('.PriceContainer-price, .price-value, [data-testid="price"]')
+        if price_elem:
+            price_text = price_elem.get_text(strip=True)
+            # Extract numeric value
+            price_match = re.search(r'[\d,]+\.?\d*', price_text.replace(',', ''))
+            if price_match:
+                aed_price = float(price_match.group())
+                currency_prices = calculate_currency_prices(aed_price)
+                product_data.update(currency_prices)
+
+        # CATEGORY
+        breadcrumbs = []
+        breadcrumb_elems = soup.select('ol.BreadcrumbList li span[itemprop="name"], .breadcrumb a')
+        for elem in breadcrumb_elems:
+            text = elem.get_text(strip=True)
+            if text and text.lower() not in ['home', 'ounass']:
+                breadcrumbs.append(text)
+        product_data['category'] = ' > '.join(breadcrumbs) if breadcrumbs else 'Unknown'
+        details_dict = {}
+
+        # Define the tab-panel IDs you want to process
+        panel_ids = [
+            'content-tab-panel-0',
+            'content-tab-panel-1',
+            'content-tab-panel-2',
+            'content-tab-panel-3'  # Duplicate intentionally, as mentioned
+        ]
+
+        for panel_id in panel_ids:
+            tab_id = panel_id.replace('-panel', '')  # e.g., 'content-tab-0'
+            
+            tab_elem = soup.select_one(f'#{tab_id}')       # For key
+            panel_elem = soup.select_one(f'#{panel_id}')   # For value
+
+            if tab_elem and panel_elem:
+                key_text = tab_elem.get_text(" ", strip=True)
+                
+                # Get all <p> tags inside the panel
+                p_tags = panel_elem.find_all('p')
+                value_text = ' '.join(p.get_text(" ", strip=True) for p in p_tags)
+
+                if key_text and value_text:
+                    details_dict[key_text] = value_text
+
+        product_data['product_details'] = details_dict if details_dict else 'No details available'
+
+        # IMAGE URLS
+        image_urls = []
+        for img in soup.select('img[src*="images.ounass"], .product-image, [data-testid="product-image"]'):
+            src = img.get('src') or img.get('data-src')
+            if src and 'http' in src:
+                # Convert to high-res if possible
+                src = re.sub(r'_small|_medium', '_large', src)
+                if src not in image_urls:
+                    image_urls.append(src)
+        product_data['image_urls'] = ', '.join(image_urls[:5])  # Limit to 5 images
+
+        # SALE INFO
+        sale_info = extract_sale_info(soup)
+        product_data['original_price'] = sale_info['original_price']
+        product_data['sale_price'] = sale_info['sale_price']
+        product_data['discount'] = sale_info['discount']
+
+        # SIZE & FIT
+        product_data['size_and_fit'] = extract_size_and_fit(soup)
+
+        return product_data
+    except Exception as e:
+        print(f"[Error] Failed to scrape {url}: {e}")
+        return product_data
+
+def extract_product_details_enhanced(driver, url):
+    product_data = {
+        'product_url': url,
+        'brand': '',
+        'product_name': '',
+        'product_details': {},
+        'category': '',
+        'image_urls': '',
+        'original_price': '',
+        'sale_price': '',
+        'discount': '',
+        'price_aed': '',
+        'price_usd': '',
+        'price_gbp': '',
+        'price_eur': '',
+        'size_and_fit': ''
+    }
+    try:
+        print(f"\n[*] Scraping: {url}")
+        if not wait_and_retry_on_block(driver, url):
+            print(f"[❌] Failed to load product page: {url}")
+            return product_data
+        simulate_human_behavior(driver)
+        time.sleep(2)  # Ensure page is rendered
+        # Wait for gallery or at least one product image to appear
+        try:
+            WebDriverWait(driver, 15).until(
+                lambda d: (
+                    d.find_elements(By.CSS_SELECTOR, '.ImageGalleryMobile-slides img[src*="atgcdn.ae"]') or
+                    d.find_elements(By.CSS_SELECTOR, '.ImageGalleryMobile img[src*="atgcdn.ae"]') or
+                    d.find_elements(By.CSS_SELECTOR, 'img[src*="atgcdn.ae"]')
+                )
+            )
+            time.sleep(1)  # Give a little extra time for images to load
+        except Exception as e:
+            print(f"[Warning] Gallery images did not appear in time: {e}")
+        html = driver.page_source
+        soup = BeautifulSoup(html, 'html.parser')
+        try:
+            with open('debug_product_page.html', 'w', encoding='utf-8') as f:
+                f.write(html)
+            print("[*] Saved debug_product_page.html for inspection.")
+        except Exception as e:
+            print(f"[Warning] Could not save debug_product_page.html: {e}")
+        # BRAND (try h2.PDPDesktop-designerCategoryName, then inside a, then fallbacks)
+        brand_elem = soup.select_one('h2.PDPDesktop-designerCategoryName')
+        if not brand_elem:
+            brand_elem = soup.select_one('a.PDPDesktop-designerCategoryLink h2.PDPDesktop-designerCategoryName')
+        if not brand_elem:
+            brand_selectors = [
+                'a.PDPMobile-brand', '.product-brand', '[data-testid="brand-name"]',
+                '[class*="brand"]', '.brand', 'a[class*="brand"]'
+            ]
+            for selector in brand_selectors:
+                brand_elem = soup.select_one(selector)
+                if brand_elem:
+                    break
+        if brand_elem:
+            product_data['brand'] = brand_elem.get_text(strip=True)
+        # PRODUCT NAME (BeautifulSoup only)
+        name_elem = soup.select_one('h1.PDPMobile-name')
+        if not name_elem:
+            name_selectors = [
+                'h1.PLPDesktop-name', 'h1.product-name', 'h1.ProductDetails-name',
+                '[data-testid="product-name"]', 'h1[class*="product"]',
+                '.product-title', 'h1[class*="name"]', 'h1'  # Fallbacks
+            ]
+            for selector in name_selectors:
+                name_elem = soup.select_one(selector)
+                if name_elem:
+                    break
+        if name_elem:
+            name = name_elem.get_text(strip=True)
+            if product_data['brand'] and product_data['brand'] in name:
+                name = name.replace(product_data['brand'], '').strip()
+            product_data['product_name'] = name
+        if not product_data['product_name']:
+            print("[Error] Product name not found in HTML. See debug_product_page.html.")
+            print("[DEBUG] HTML snippet:", html[:500])
+        # PRICE (prefer .PriceContainer-price)
+        price_elem = soup.select_one('.PriceContainer-price')
+        if not price_elem:
+            price_selectors = [
+                '.price-value', '[data-testid="price"]',
+                '.price', '.current-price', '[class*="price"]'
+            ]
+            for selector in price_selectors:
+                price_elem = soup.select_one(selector)
+                if price_elem:
+                    break
+        if price_elem:
+            price_text = price_elem.get_text(strip=True)
+            price_match = re.search(r'[\d,]+\.?\d*', price_text.replace(',', ''))
+            if price_match:
+                aed_price = float(price_match.group())
+                currency_prices = calculate_currency_prices(aed_price)
+                product_data.update(currency_prices)
+        # CATEGORY (breadcrumbs)
+        breadcrumb_selectors = [
+            'ol.BreadcrumbList li span[itemprop="name"]', '.breadcrumb a',
+            '[class*="breadcrumb"] a', 'nav[aria-label*="breadcrumb"] a'
+        ]
+        breadcrumbs = []
+        for selector in breadcrumb_selectors:
+            breadcrumb_elems = soup.select(selector)
+            if breadcrumb_elems:
+                for elem in breadcrumb_elems:
+                    text = elem.get_text(strip=True)
+                    if text and text.lower() not in ['home', 'ounass']:
+                        breadcrumbs.append(text)
+                break
+        product_data['category'] = ' > '.join(breadcrumbs) if breadcrumbs else 'Unknown'
+        # PRODUCT DETAILS (prefer Design details, fallback to first details.ContentAccordion, then others)
+        details_dict = {}
+
+        # Define the tab-panel IDs you want to process
+        panel_ids = [
+            'content-tab-panel-0',
+            'content-tab-panel-1',
+            'content-tab-panel-2',
+            'content-tab-panel-3'  # Duplicate intentionally, as mentioned
+        ]
+
+        for panel_id in panel_ids:
+            tab_id = panel_id.replace('-panel', '')  # e.g., 'content-tab-0'
+            
+            tab_elem = soup.select_one(f'#{tab_id}')       # For key
+            panel_elem = soup.select_one(f'#{panel_id}')   # For value
+
+            if tab_elem and panel_elem:
+                key_text = tab_elem.get_text(" ", strip=True)
+                
+                # Get all <p> tags inside the panel
+                p_tags = panel_elem.find_all('p')
+                value_text = ' '.join(p.get_text(" ", strip=True) for p in p_tags)
+
+                if key_text and value_text:
+                    details_dict[key_text] = value_text
+
+        product_data['product_details'] = details_dict if details_dict else 'No details available'
+        # IMAGE URLS (robust: try gallery, then fallbacks, filter by atgcdn.ae)
+        image_urls = []
+        # 1. Try .ImageGalleryMobile-slides
+        gallery = soup.select_one('.ImageGalleryMobile-slides')
+        if gallery:
+            for img in gallery.find_all('img', src=True):
+                src = img['src']
+                if 'atgcdn.ae' in src:
+                    if src.startswith('//'):
+                        src = 'https:' + src
+                    elif src.startswith('/'):
+                        src = 'https://www.ounass.ae' + src
+                    src = re.sub(r'dw=\\d+', 'dw=1200', src)
+                    if src not in image_urls:
+                        image_urls.append(src)
+        # 2. Fallback: .ImageGalleryMobile img
+        if not image_urls:
+            for img in soup.select('.ImageGalleryMobile img[src*="atgcdn.ae"]'):
+                src = img['src']
+                if src.startswith('//'):
+                    src = 'https:' + src
+                elif src.startswith('/'):
+                    src = 'https://www.ounass.ae' + src
+                src = re.sub(r'dw=\\d+', 'dw=1200', src)
+                if src not in image_urls:
+                    image_urls.append(src)
+        # 3. Fallback: any img[src*="atgcdn.ae"]
+        if not image_urls:
+            for img in soup.find_all('img', src=True):
+                src = img['src']
+                if 'atgcdn.ae' in src:
+                    if src.startswith('//'):
+                        src = 'https:' + src
+                    elif src.startswith('/'):
+                        src = 'https://www.ounass.ae' + src
+                    src = re.sub(r'dw=\\d+', 'dw=1200', src)
+                    if src not in image_urls:
+                        image_urls.append(src)
+        product_data['image_urls'] = ', '.join(image_urls)
+        # SALE INFO
+        sale_info = extract_sale_info(soup)
+        product_data.update(sale_info)
+        # SIZE & FIT
+        product_data['size_and_fit'] = extract_size_and_fit(soup)
+        return product_data
+    except Exception as e:
+        print(f"[Error] Failed to scrape {url}: {e}")
+        with open('debug_product_page.html', 'w', encoding='utf-8') as f:
+            f.write(driver.page_source)
+        print("[*] Saved debug_product_page.html for inspection.")
+        return product_data
+
+def download_product_images(product_data, download_images_flag=True):
+    if not download_images_flag or not product_data['image_urls'] or not product_data['product_name']:
+        print(f"[DEBUG] Skipping image download: download_images_flag={download_images_flag}, image_urls={product_data['image_urls']}, product_name={product_data['product_name']}")
+        return
+    try:
+        folder_name = re.sub(r'[^ - \w-]', '', product_data['product_name'])[:50]
+        folder_name = re.sub(r'\s+', '_', folder_name)
+        if not folder_name.strip('_'):
+            folder_name = f"product_{hash(product_data['product_url']) % 10000}"
+        product_folder = os.path.join('images', folder_name)
+        os.makedirs(product_folder, exist_ok=True)
+        print(f"Saving images to: {os.path.abspath(product_folder)}")
+        image_urls = product_data['image_urls'].split(', ')
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': 'image/webp,image/apng,image/,/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Accept-Encoding': 'gzip, deflate',
+            'DNT': '1',
+            'Connection': 'keep-alive'
+        }
+        print(f"[*] Downloading images to: {product_folder}")
+        for i, img_url in enumerate(image_urls[:8], 1):
+            try:
+                print(f"[DEBUG] Attempting to download image {i}: {img_url}")
+                response = requests.get(img_url, timeout=15, headers=headers)
+                print(f"[DEBUG] Response status for image {i}: {response.status_code}, Content-Length: {len(response.content)}")
+                if response.status_code == 200 and len(response.content) > 1000:
+                    content_type = response.headers.get('content-type', '')
+                    if 'jpeg' in content_type or 'jpg' in content_type:
+                        ext = '.jpg'
+                    elif 'png' in content_type:
+                        ext = '.png'
+                    elif 'webp' in content_type:
+                        ext = '.webp'
+                    else:
+                        ext = '.jpg'
+                    safe_name = re.sub(r'[^ - \w-]', '', product_data['product_name'])[:30]
+                    safe_name = re.sub(r'\s+', '_', safe_name)
+                    filename = f"{safe_name} pic {i}{ext}"
+                    filepath = os.path.join(product_folder, filename)
+                    with open(filepath, 'wb') as f:
+                        f.write(response.content)
+                    print(f"[✓] Downloaded: {filename}")
+                else:
+                    print(f"[Warning] Image {i} not downloaded: status {response.status_code}, content length {len(response.content)}")
+            except Exception as e:
+                print(f"[Warning] Failed to download image {i}: {e}")
+            time.sleep(random.uniform(1, 2))
+    except Exception as e:
+        print(f"[Error] Failed to download images: {e}")
+
+
+def load_existing_data():
+    """Load existing scraped data to prevent duplicates"""
+    existing_products = []
+    existing_urls = set()
+    
+    # Try to load existing CSV file
+    csv_filename = 'ounass_products.csv'
+    if os.path.exists(csv_filename):
+        try:
+            df = pd.read_csv(csv_filename, encoding='utf-8-sig')
+            existing_products = df.to_dict('records')
+            existing_urls = set(product['product_url'] for product in existing_products if 'product_url' in product)
+            print(f"[*] Loaded {len(existing_products)} existing products from {csv_filename}")
+        except Exception as e:
+            print(f"[Warning] Could not load existing CSV: {e}")
+    
+    # Try to load existing JSON file as backup
+    json_filename = 'ounass_products.json'
+    if not existing_products and os.path.exists(json_filename):
+        try:
+            with open(json_filename, 'r', encoding='utf-8') as f:
+                existing_products = json.load(f)
+                existing_urls = set(product['product_url'] for product in existing_products if 'product_url' in product)
+                print(f"[*] Loaded {len(existing_products)} existing products from {json_filename}")
+        except Exception as e:
+            print(f"[Warning] Could not load existing JSON: {e}")
+    
+    return existing_products, existing_urls
+
+def save_data_with_append(all_products, existing_products):
+    """Save data by appending to existing files"""
+    # Create DataFrame for new products only
+    if not all_products:
+        print("[!] No new products to save")
+        return 'ounass_products.csv', 'ounass_products.json', len(existing_products)
+    
+    new_df = pd.DataFrame(all_products)
+    
+    # CSV filename
+    csv_filename = 'ounass_products.csv'
+    json_filename = 'ounass_products.json'
+    
+    # Try to append to existing CSV
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            if existing_products and os.path.exists(csv_filename):
+                # Load existing CSV and append new data
+                existing_df = pd.read_csv(csv_filename, encoding='utf-8-sig')
+                combined_df = pd.concat([existing_df, new_df], ignore_index=True)
+                combined_df.to_csv(csv_filename, index=False, encoding='utf-8-sig')
+                print(f"[✅] Successfully appended {len(all_products)} new products to {csv_filename}")
+            else:
+                # No existing data, create new file
+                new_df.to_csv(csv_filename, index=False, encoding='utf-8-sig')
+                print(f"[✅] Successfully created new {csv_filename} with {len(all_products)} products")
+            break
+        except PermissionError:
+            if attempt < max_retries - 1:
+                print(f"[⏳] Permission denied, retrying in 2 seconds... (attempt {attempt + 1}/{max_retries})")
+                time.sleep(2)
+            else:
+                # Last resort: create timestamped backup
+                timestamp = time.strftime("%Y%m%d_%H%M%S")
+                backup_csv = f'ounass_products_{timestamp}.csv'
+                new_df.to_csv(backup_csv, index=False, encoding='utf-8-sig')
+                print(f"[⚠] Could not save to {csv_filename} after {max_retries} attempts")
+                print(f"[💾] Saved to backup file: {backup_csv}")
+                csv_filename = backup_csv
+        except Exception as e:
+            print(f"[Error] Failed to save CSV: {e}")
+            break
+    
+    # Save JSON (combine existing + new)
+    try:
+        combined_products = existing_products + all_products if existing_products else all_products
+        with open(json_filename, 'w', encoding='utf-8') as f:
+            json.dump(combined_products, f, indent=2, ensure_ascii=False)
+        print(f"[✅] Successfully saved to {json_filename}")
+    except Exception as e:
+        print(f"[Error] Failed to save JSON: {e}")
+    
+    return csv_filename, json_filename, len(combined_products)
+
+def main():
+    MAX_PRODUCTS_PER_CATEGORY = None  # Scrape all products
+    DOWNLOAD_IMAGES = True
+    categories = {
+        'Women Clothing': {
+            'url': 'https://www.ounass.ae/women/clothing',
+            'path': 'Women > Clothing'
+        },
+        'Women Shoes': {
+            'url': 'https://www.ounass.ae/women/shoes',
+            'path': 'Women > Shoes'
+        },
+        'Women Bags': {
+            'url': 'https://www.ounass.ae/women/bags',
+            'path': 'Women > Bags'
+        },
+        'Women Beauty': {
+            'url': 'https://www.ounass.ae/women/beauty',
+            'path': 'Women > Beauty'
+        },
+        'Women Fine Jewellery': {
+            'url': 'https://www.ounass.ae/women/jewellery/fine-jewellery',
+            'path': 'Women > Jewellery > Fine Jewellery'
+        },
+        'Women Fashion Jewellery': {
+            'url': 'https://www.ounass.ae/women/jewellery/fashion-jewellery',
+            'path': 'Women > Jewellery > Fashion Jewellery'
+        },
+        'Women Accessories': {
+            'url': 'https://www.ounass.ae/women/accessories',
+            'path': 'Women > Accessories'
+        },
+        'Women Gifts': {
+            'url': 'https://www.ounass.ae/women/edits/gifts-for-her',
+            'path': 'Women > Gifts'
+        },
+        'Women Home': {
+            'url': 'https://www.ounass.ae/women/home',
+            'path': 'Women > Home'
+        },
+        'Women Pre-loved': {
+            'url': 'https://www.ounass.ae/women/pre-loved',
+            'path': 'Women > Pre-loved'
+        },
+        'Men Clothing': {
+            'url': 'https://www.ounass.ae/men/clothing',
+            'path': 'Men > Clothing'
+        },
+        'Men Shoes': {
+            'url': 'https://www.ounass.ae/men/shoes',
+            'path': 'Men > Shoes'
+        },
+        'Men Accessories': {
+            'url': 'https://www.ounass.ae/men/accessories',
+            'path': 'Men > Accessories'
+        },
+        'Men Grooming': {
+            'url': 'https://www.ounass.ae/men/grooming',
+            'path': 'Men > Grooming'
+        },
+        'Men Gifts': {
+            'url': 'https://www.ounass.ae/men/edits/gifts-for-him',
+            'path': 'Men > Gifts'
+        },
+        'Men Bags': {
+            'url': 'https://www.ounass.ae/men/bags',
+            'path': 'Men > Bags'
+        },
+        'Men Watches': {
+            'url': 'https://www.ounass.ae/men/watches',
+            'path': 'Men > Watches'
+        },
+        'Men Home': {
+            'url': 'https://www.ounass.ae/men/home',
+            'path': 'Men > Home'
+        },
+        'Kids Baby': {
+            'url': 'https://www.ounass.ae/kids/baby',
+            'path': 'Kids > Baby'
+        },
+        'Kids Girl': {
+            'url': 'https://www.ounass.ae/kids/girl',
+            'path': 'Kids > Girl'
+        },
+        'Kids Boy': {
+            'url': 'https://www.ounass.ae/kids/boy',
+            'path': 'Kids > Boy'
+        },
+        'Kids Shoes': {
+            'url': 'https://www.ounass.ae/kids/shoes',
+            'path': 'Kids > Shoes'
+        },
+        'Kids Accessories': {
+            'url': 'https://www.ounass.ae/kids/accessories',
+            'path': 'Kids > Accessories'
+        },
+        'Kids Gifts': {
+            'url': 'https://www.ounass.ae/kids/edits/all-gifts',
+            'path': 'Kids > Gifts'
+        },
+        'Kids Edits': {
+            'url': 'https://www.ounass.ae/kids/edits',
+            'path': 'Kids > Edits'
+        },
+    }
+    print("=" * 80)
+    print("🛍  OUNASS ENHANCED ANTI-DETECTION SCRAPER")
+    print("=" * 80)
+    print(f"[*] Products per category: {MAX_PRODUCTS_PER_CATEGORY}")
+    print(f"[*] Categories to scrape: {len(categories)}")
+    existing_products, existing_urls = load_existing_data()
+    print(f"[*] Found {len(existing_urls)} existing product URLs to skip")
+    print("\n[*] Setting up enhanced anti-detection driver...")
+    driver = setup_undetected_driver()
+    if not driver:
+        print("[❌] Failed to initialize browser driver")
+        return
+    all_products = []
+    try:
+        for category_name, category_info in categories.items():
+            print(f"\n{'='*50}")
+            print(f"📂 SCRAPING {category_name.upper()} CATEGORY")
+            print(f"{'='*50}")
+            if category_name != list(categories.keys())[0]:
+                wait_time = random.uniform(15, 30)
+                print(f"[💤] Waiting {wait_time:.1f} seconds before next category...")
+                time.sleep(wait_time)
+            product_links = enhanced_collect_product_links(driver, category_info['url'], MAX_PRODUCTS_PER_CATEGORY)
+            if not product_links:
+                print(f"[⚠] No products found in {category_name} category")
+                continue
+            new_product_links = [url for url in product_links if url not in existing_urls]
+            if not new_product_links:
+                print(f"[ℹ] All products in {category_name} already scraped")
+                continue
+            print(f"[🆕] Scraping {len(new_product_links)} new products")
+            for i, url in enumerate(new_product_links, 1):
+                print(f"\n[*] Processing product {i}/{len(new_product_links)}")
+                if i > 1:
+                    delay = random.uniform(10, 20)
+                    print(f"[💤] Waiting {delay:.1f} seconds...")
+                    time.sleep(delay)
+                product_data = extract_product_details_enhanced(driver, url)
+                if product_data['product_name']:
+                    all_products.append(product_data)
+                    print(f"[✅] Successfully scraped: {product_data['product_name'][:50]}")
+                    print(f"[DEBUG] Extracted image URLs: {product_data['image_urls']}")
+                    download_product_images(product_data, True)
+    finally:
+        driver.quit()
+        print("[✅] Browser closed successfully")
+    save_data_with_append(all_products, existing_products)
+
+if __name__ == "__main__":
+    main()
