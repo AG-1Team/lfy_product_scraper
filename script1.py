@@ -921,9 +921,10 @@ def save_data_with_append(all_products, existing_products):
     # Create DataFrame for new products only
     new_df = pd.DataFrame(all_products)
     
-    # Set file paths inside volume
-    csv_filename = os.path.join(output_dir, 'farfetch_products.csv')
-    json_filename = os.path.join(output_dir, 'farfetch_products.json')
+    # Set base filenames (no versioning here yet)
+    base_name = 'farfetch_products'
+    csv_filename = os.path.join(output_dir, f"{base_name}.csv")
+    json_filename = os.path.join(output_dir, f"{base_name}.json")
     
     # Try to append to existing CSV
     max_retries = 3
@@ -945,20 +946,19 @@ def save_data_with_append(all_products, existing_products):
                 print(f"[⏳] Permission denied, retrying in 2 seconds... (attempt {attempt + 1}/{max_retries})")
                 time.sleep(2)
             else:
-                # Last resort: create timestamped backup
-                timestamp = time.strftime("%Y%m%d_%H%M%S")
-                backup_csv = os.path.join(output_dir, f'farfetch_products_{timestamp}.csv')
-                if existing_products:
+                # Last resort: create versioned CSV file
+                versioned_csv = get_versioned_filename(output_dir, base_name, "csv")
+                if existing_products and os.path.exists(csv_filename):
                     existing_df = pd.read_csv(csv_filename, encoding='utf-8-sig')
                     combined_df = pd.concat([existing_df, new_df], ignore_index=True)
-                    combined_df.to_csv(backup_csv, index=False, encoding='utf-8-sig')
+                    combined_df.to_csv(versioned_csv, index=False, encoding='utf-8-sig')
                 else:
-                    new_df.to_csv(backup_csv, index=False, encoding='utf-8-sig')
+                    new_df.to_csv(versioned_csv, index=False, encoding='utf-8-sig')
                 print(f"[⚠] Could not save to {csv_filename} after {max_retries} attempts")
-                print(f"[💾] Saved to backup file: {backup_csv}")
-                print(f"[💡] Please close any open Excel files and manually rename {backup_csv} to {csv_filename}")
-                csv_filename = backup_csv
-    
+                print(f"[💾] Saved to versioned file: {versioned_csv}")
+                print(f"[💡] Please close any open Excel files and manually rename if needed")
+                csv_filename = versioned_csv
+
     # Save JSON (combine existing + new)
     combined_products = existing_products + all_products
     for attempt in range(max_retries):
@@ -972,15 +972,31 @@ def save_data_with_append(all_products, existing_products):
                 print(f"[⏳] Permission denied, retrying in 2 seconds... (attempt {attempt + 1}/{max_retries})")
                 time.sleep(2)
             else:
-                timestamp = time.strftime("%Y%m%d_%H%M%S")
-                backup_json = os.path.join(output_dir, f'farfetch_products_{timestamp}.json')
-                with open(backup_json, 'w', encoding='utf-8') as f:
+                versioned_json = get_versioned_filename(output_dir, base_name, "json")
+                with open(versioned_json, 'w', encoding='utf-8') as f:
                     json.dump(combined_products, f, indent=2, ensure_ascii=False)
                 print(f"[⚠] Could not save to {json_filename} after {max_retries} attempts")
-                print(f"[💾] Saved to backup file: {backup_json}")
-                json_filename = backup_json
-    
+                print(f"[💾] Saved to versioned file: {versioned_json}")
+                json_filename = versioned_json
+
     return csv_filename, json_filename, len(combined_products)
+
+def get_versioned_filename(base_path, base_name, ext):
+    """
+    Returns a new filepath like base_name(n).ext if base_name.ext already exists.
+    """
+    full_path = os.path.join(base_path, f"{base_name}.{ext}")
+    if not os.path.exists(full_path):
+        return full_path
+    
+    counter = 1
+    while True:
+        versioned = os.path.join(base_path, f"{base_name}({counter}).{ext}")
+        if not os.path.exists(versioned):
+            return versioned
+        counter += 1
+
+
 
 def main():
     """Main scraping function with enhanced error handling and data display"""
@@ -1127,10 +1143,6 @@ def main():
         print(f"[*] Products per category: {MAX_PRODUCTS_PER_CATEGORY}")
         print(f"[*] Download images: {'Yes' if DOWNLOAD_IMAGES else 'No'}")
         
-        # Load existing data to prevent duplicates
-        existing_products, existing_urls = load_existing_data()
-        print(f"[*] Found {len(existing_urls)} existing product URLs to skip")
-        
         # Setup driver
         driver = setup_driver()
         if not driver:
@@ -1153,7 +1165,7 @@ def main():
                     print(f"[⚠] No products found in {category_name} category")
                     continue
                 
-                new_product_links = [url for url in product_links if url not in existing_urls]
+                new_product_links = product_links
                 skipped_in_category = len(product_links) - len(new_product_links)
                 skipped_duplicates += skipped_in_category
                 
