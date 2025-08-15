@@ -6,20 +6,13 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# Create non-root user
+# Create non-root user (same as worker to avoid chown issues)
 RUN groupadd --gid 1000 appuser && \
     useradd --uid 1000 --gid appuser --shell /bin/bash --create-home appuser
 
-# Install Chromium for Selenium
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    wget curl ca-certificates entr \
-    chromium chromium-driver \
-    fonts-liberation fonts-dejavu-core fontconfig \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
-
 WORKDIR /app
 
-# Install dependencies
+# Install Python dependencies (no Chromium here)
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
@@ -29,5 +22,5 @@ COPY --chown=appuser:appuser . .
 
 USER appuser
 
-# Run celery worker
-CMD ["celery", "-A", "tasks", "worker", "--loglevel=info", "--concurrency=1"]
+# Run Flask
+# CMD ["flask", "run", "--host=0.0.0.0", "--port=5500"]

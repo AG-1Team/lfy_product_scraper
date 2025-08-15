@@ -1,0 +1,30 @@
+services:
+  lfy-scrapper-web-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: lfy-scrapper-web-dev
+    restart: unless-stopped
+    volumes:
+      # Mount source code for live reload
+      - ./src:/app/src
+      - ./data:/app/data
+      - ./logs:/app/logs
+      # Exclude Python cache
+      - /app/src/__pycache__
+    environment:
+      - PYTHONPATH=/app
+      - ENVIRONMENT=development
+      - DEBUG=true
+    # Simple auto-restart using entr (lightweight file watcher)
+    command: >
+      sh -c "
+        echo 'Development mode: Watching for file changes...' &&
+        find /app/src -name '*.py' | entr -nr python /app/src/run.py
+      "
+    networks:
+      - dev-network
+
+networks:
+  dev-network:
+    driver: bridge

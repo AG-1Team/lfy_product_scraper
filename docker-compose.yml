@@ -1,0 +1,77 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    container_name: flask_scraper
+    ports:
+      - "5500:5500"
+    # REMOVED: volumes: .:/app - this causes file watching issues
+    environment:
+      - FLASK_APP=app.run
+      - FLASK_ENV=production
+      - FLASK_DEBUG=0 # Explicitly disable debug
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      - redis
+    command:
+      [
+        "python",
+        "-m",
+        "flask",
+        "run",
+        "--host=0.0.0.0",
+        "--port=5500",
+        "--no-reload",
+      ]
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: celery_worker
+    shm_size: 2gb
+    # REMOVED: volumes: .:/app - this causes file watching issues
+    command: [
+        "celery",
+        "-A",
+        "app.tasks",
+        "worker",
+        "--loglevel=info",
+        "--concurrency=1",
+        "--pool=solo",
+        "--without-heartbeat", # Prevent duplicate worker detection
+        "--without-mingle", # Skip worker discovery
+      ]
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - PYTHONUNBUFFERED=1
+      - DISPLAY=:99
+      - CHROMIUM_FLAGS=--no-sandbox --disable-dev-shm-usage
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  redis:
+    image: redis:7
+    container_name: redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web

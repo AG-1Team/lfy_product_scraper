@@ -1,0 +1,3 @@
+dataapi.luxuryforyou.com {
+  reverse_proxy web:5500
+}

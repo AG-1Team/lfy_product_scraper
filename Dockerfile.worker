@@ -28,6 +28,3 @@ RUN pip install --no-cache-dir --upgrade pip && \
 COPY --chown=appuser:appuser . .
 
 USER appuser
-
-# Run celery worker
-CMD ["celery", "-A", "tasks", "worker", "--loglevel=info", "--concurrency=1"]
