@@ -75,3 +75,7 @@ services:
       - caddy_config:/config
     depends_on:
       - web
+
+volumes:
+  caddy_data:
+  caddy_config:
