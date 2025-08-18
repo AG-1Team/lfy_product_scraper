@@ -1,9 +1,10 @@
 # app.py
 from flask import Flask, request, jsonify
-from .tasks import scrape_farfetch_and_notify
-from .utils.index import extract_website
+from .tasks import scrape_product_and_notify
+# from .utils.index import extract_website
 
 app = Flask(__name__)
+
 
 @app.route("/scrape", methods=["POST"])
 def scrape_farfetch():
@@ -13,10 +14,10 @@ def scrape_farfetch():
         return jsonify({"error": "request data is required"}), 400
 
     url = req_data.get("url")
-    website = extract_website(url)
+    # website = extract_website(url)
     medusa_product_data = req_data.get("medusa_product_data")
 
-    print("Website extracted:", website)
+    # print("Website extracted:", website)
 
     if not url:
         return jsonify({"error": "url is required"}), 400
@@ -26,8 +27,14 @@ def scrape_farfetch():
 
     task = None
 
-    if website == "www.farfetch.com":
-        task = scrape_farfetch_and_notify.delay(url, medusa_product_data)
+    if "farfetch" in url:
+        task = scrape_product_and_notify.delay(
+            url, medusa_product_data, "farfetch")
+    elif "lyst" in url:
+        task = scrape_product_and_notify.delay(
+            url, medusa_product_data, "lyst")
+    else:
+        return jsonify({"error": f'Website with url %{url} is not supported'}), 400
 
     if task:
         return jsonify({"message": "Task scheduled", "task_id": task.id})

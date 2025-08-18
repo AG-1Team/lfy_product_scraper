@@ -9,7 +9,7 @@ from selenium.webdriver.chrome.service import Service
 from selenium_stealth import stealth
 
 
-def setup_driver():
+def setup_farfetch_driver():
     """Setup stealth-enabled Chromium driver optimized for server environments"""
     try:
         # Rotate user agent
@@ -69,7 +69,8 @@ def setup_driver():
 
         # Anti-detection
         options.add_argument("--disable-blink-features=AutomationControlled")
-        options.add_experimental_option("excludeSwitches", ["enable-automation", "enable-logging"])
+        options.add_experimental_option(
+            "excludeSwitches", ["enable-automation", "enable-logging"])
         options.add_experimental_option('useAutomationExtension', False)
 
         # Window size (important even in headless mode)
@@ -78,7 +79,7 @@ def setup_driver():
         # CHROMIUM SPECIFIC: Set binary location
         chromium_paths = [
             '/usr/bin/chromium',        # Most common on Debian/Ubuntu
-            '/usr/bin/chromium-browser', # Alternative name
+            '/usr/bin/chromium-browser',  # Alternative name
             '/snap/bin/chromium',       # Snap package
             '/usr/bin/google-chrome',   # Fallback if Chrome is installed
             '/usr/bin/google-chrome-stable'
@@ -113,7 +114,7 @@ def setup_driver():
             '/usr/bin/chromedriver',           # System chromedriver
             '/usr/lib/chromium-browser/chromedriver',  # Chromium package
             '/usr/bin/chromium-chromedriver',  # Alternative name
-            '/snap/bin/chromium.chromedriver', # Snap package
+            '/snap/bin/chromium.chromedriver',  # Snap package
             '/opt/chromedriver',               # Custom install
             '/usr/local/bin/chromedriver'      # Manual install
         ]
@@ -127,14 +128,15 @@ def setup_driver():
                     print(f"[*] Found ChromeDriver at: {path}")
                     break
                 else:
-                    print(f"[Warning] Found ChromeDriver at {path} but it's not executable")
+                    print(
+                        f"[Warning] Found ChromeDriver at {path} but it's not executable")
 
         if not driver_path:
             print("[Error] No ChromeDriver found at standard locations")
             print("[*] Trying to find chromedriver in PATH...")
             try:
                 result = subprocess.run(['which', 'chromedriver'],
-                                      capture_output=True, text=True, timeout=5)
+                                        capture_output=True, text=True, timeout=5)
                 if result.returncode == 0 and result.stdout.strip():
                     driver_path = result.stdout.strip()
                     print(f"[*] Found ChromeDriver in PATH: {driver_path}")
@@ -153,7 +155,7 @@ def setup_driver():
         # Test if ChromeDriver is working
         try:
             result = subprocess.run([driver_path, '--version'],
-                                  capture_output=True, text=True, timeout=10)
+                                    capture_output=True, text=True, timeout=10)
             if result.returncode == 0:
                 print(f"[*] ChromeDriver version: {result.stdout.strip()}")
             else:
@@ -188,9 +190,12 @@ def setup_driver():
         driver.implicitly_wait(15)  # Increased implicit wait
 
         # Additional anti-detection measures
-        driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-        driver.execute_script("Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]})")
-        driver.execute_script("Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']})")
+        driver.execute_script(
+            "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        driver.execute_script(
+            "Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]})")
+        driver.execute_script(
+            "Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']})")
 
         # Use selenium-stealth for additional protection
         stealth(driver,
@@ -200,14 +205,15 @@ def setup_driver():
                 webgl_vendor="Intel Inc.",
                 renderer="Intel Iris OpenGL Engine",
                 fix_hairline=True,
-        )
+                )
 
         # Test if driver works with retry mechanism
         max_test_retries = 3
         for attempt in range(max_test_retries):
             try:
                 driver.get("https://httpbin.org/user-agent")
-                print(f"[✓] Driver initialized successfully (attempt {attempt + 1})")
+                print(
+                    f"[✓] Driver initialized successfully (attempt {attempt + 1})")
                 break
             except Exception as e:
                 print(f"[Warning] Test failed on attempt {attempt + 1}: {e}")
@@ -243,9 +249,10 @@ def detect_browser():
             if os.path.exists(path):
                 try:
                     result = subprocess.run([path, '--version'],
-                                          capture_output=True, text=True, timeout=10)
+                                            capture_output=True, text=True, timeout=10)
                     if result.returncode == 0:
-                        print(f"[*] Found {browser_name}: {result.stdout.strip()}")
+                        print(
+                            f"[*] Found {browser_name}: {result.stdout.strip()}")
                         return browser_name, path
                 except:
                     continue
@@ -268,7 +275,7 @@ def test_system_setup():
     # Test driver
     try:
         result = subprocess.run(['chromedriver', '--version'],
-                              capture_output=True, text=True, timeout=10)
+                                capture_output=True, text=True, timeout=10)
         if result.returncode == 0:
             print(f"[✓] ChromeDriver: {result.stdout.strip()}")
         else:

@@ -6,26 +6,21 @@ services:
     container_name: flask_scraper
     ports:
       - "5500:5500"
-    # REMOVED: volumes: .:/app - this causes file watching issues
+    volumes:
+      - .:/app
     environment:
       - FLASK_APP=app.run
-      - FLASK_ENV=production
-      - FLASK_DEBUG=0 # Explicitly disable debug
+      - FLASK_ENV=development # Changed to development for hot reload
+      - FLASK_DEBUG=1
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - PYTHONUNBUFFERED=1
+      - WATCHDOG_TRIGGER_FILE=/app/.reload_trigger
     depends_on:
       - redis
-    command:
-      [
-        "python",
-        "-m",
-        "flask",
-        "run",
-        "--host=0.0.0.0",
-        "--port=5500",
-        "--no-reload",
-      ]
+    command: >
+      sh -c "watchmedo auto-restart --directory=/app --patterns='*.py' --recursive --signal SIGTERM 
+      -- python -m flask run --host=0.0.0.0 --port=5500"
     restart: unless-stopped
 
   worker:
@@ -34,26 +29,20 @@ services:
       dockerfile: Dockerfile.worker
     container_name: celery_worker
     shm_size: 2gb
-    # REMOVED: volumes: .:/app - this causes file watching issues
-    command: [
-        "celery",
-        "-A",
-        "app.tasks",
-        "worker",
-        "--loglevel=info",
-        "--concurrency=1",
-        "--pool=solo",
-        "--without-heartbeat", # Prevent duplicate worker detection
-        "--without-mingle", # Skip worker discovery
-      ]
+    volumes:
+      - .:/app
     environment:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - PYTHONUNBUFFERED=1
       - DISPLAY=:99
       - CHROMIUM_FLAGS=--no-sandbox --disable-dev-shm-usage
+      - WATCHDOG_TRIGGER_FILE=/app/.reload_trigger
     depends_on:
       - redis
+    command: >
+      sh -c "watchmedo auto-restart --directory=/app --patterns='*.py' --recursive --signal SIGTERM 
+      -- celery -A app.tasks worker --loglevel=info --concurrency=1 --pool=solo --without-heartbeat --without-mingle"
     restart: unless-stopped
 
   redis:
@@ -62,20 +51,3 @@ services:
     ports:
       - "6379:6379"
     restart: unless-stopped
-
-  caddy:
-    image: caddy:2-alpine
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile
-      - caddy_data:/data
-      - caddy_config:/config
-    depends_on:
-      - web
-
-volumes:
-  caddy_data:
-  caddy_config:
