@@ -33,6 +33,21 @@ def scrape_farfetch():
     elif "lyst" in url:
         task = scrape_product_and_notify.delay(
             url, medusa_product_data, "lyst")
+    elif "modesens" in url:
+        task = scrape_product_and_notify.delay(
+            url, medusa_product_data, "modesens")
+    elif "reversible" in url:
+        task = scrape_product_and_notify.delay(
+            url, medusa_product_data, "reversible")
+    elif "italist" in url:
+        task = scrape_product_and_notify.delay(
+            url, medusa_product_data, "italist")
+    elif "leam" in url:
+        task = scrape_product_and_notify.delay(
+            url, medusa_product_data, "leam")
+    elif "selfridge" in url:
+        task = scrape_product_and_notify.delay(
+            url, medusa_product_data, "selfridge")
     else:
         return jsonify({"error": f'Website with url %{url} is not supported'}), 400
 

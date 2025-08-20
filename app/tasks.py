@@ -4,6 +4,11 @@ import requests
 from .driver.index import setup_farfetch_driver
 from .farfetch.index import farfetch_retrieve_products
 from .scrapers.lyst import LystScraper
+from .scrapers.modesens import ModeSensScraper
+from .scrapers.reversible import ReversibleScraper
+from .scrapers.leam import LeamScraper
+from .scrapers.selfridge import SelfridgesScraper
+from .scrapers.italist import ItalistScraper
 
 celery = Celery("tasks")
 
@@ -32,7 +37,17 @@ def get_driver(website: str):
             # farfetch specific setup
             drivers[website] = setup_farfetch_driver()
         elif website == "lyst":
-            drivers[website] = LystScraper(headless=False, wait_time=15)
+            drivers[website] = LystScraper(headless=True, wait_time=15)
+        elif website == "modesens":
+            drivers[website] = ModeSensScraper(headless=True, wait_time=15)
+        elif website == "reversible":
+            drivers[website] = ReversibleScraper(headless=True, wait_time=15)
+        elif website == "leam":
+            drivers[website] = LeamScraper(headless=True, wait_time=15)
+        elif website == "selfridge":
+            drivers[website] = SelfridgesScraper(headless=True, wait_time=15)
+        elif website == "italist":
+            drivers[website] = ItalistScraper(headless=True, wait_time=15)
         # elif website == "other":
         #     drivers[website] = setup_driver(profile="other")
         else:
@@ -50,7 +65,7 @@ def shutdown_all_drivers(**kwargs):
             if site == "farfetch":
                 drv.quit()
                 print(f"✓ Closed {site} driver")
-            elif site == "lyst":
+            else:
                 drv.close()
                 print(f"✓ Closed {site} driver")
         except Exception as e:
@@ -65,7 +80,19 @@ def scrape_product_and_notify(url, medusa_product_data, website):
     if website == "farfetch":
         data["farfetch"] = farfetch_retrieve_products(driver, url)
     elif website == "lyst":
-        data["lyst"] = driver.scrape_multiple_products([url])
+        data["lyst"] = driver.scrape_product(url)
+    elif website == "modesens":
+        data["modesens"] = driver.scrape_product(url)
+    elif website == "reversible":
+        data["reversible"] = driver.scrape_product(url)
+    elif website == "italist":
+        data["italist"] = driver.scrape_product(url)
+    elif website == "selfridge":
+        data["selfridge"] = driver.scrape_product(url)
+    elif website == "leam":
+        data["leam"] = driver.scrape_product(url)
+    else:
+        raise ValueError(f"Website {website} is not supported")
 
     data["medusa"] = medusa_product_data
 

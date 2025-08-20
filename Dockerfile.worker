@@ -4,37 +4,47 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    CHROME_VERSION=130.0.6723.116
 
-RUN groupadd --gid 1000 appuser && \
-    useradd --uid 1000 --gid appuser --shell /bin/bash --create-home appuser
+# Install base tools & dependencies
+RUN apt-get -y update && \
+    apt-get -y install --no-install-recommends \
+    unzip curl ca-certificates gnupg \
+    fonts-liberation fonts-dejavu-core fontconfig \
+    libnss3 libxss1 libasound2 libatk-bridge2.0-0 \
+    libatk1.0-0 libx11-xcb1 libxcomposite1 libxcursor1 \
+    libxdamage1 libxrandr2 libgbm1 libpango-1.0-0 \
+    libpangocairo-1.0-0 libcairo2 libatspi2.0-0 libgtk-3-0 \
+    libdrm2 libxfixes3 libxrandr2 && \
+    rm -rf /var/lib/apt/lists/*
 
-# Install Chrome + ChromeDriver
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    wget curl ca-certificates gnupg unzip fonts-liberation fonts-dejavu-core fontconfig \
-    libnss3 libxss1 libasound2 libatk-bridge2.0-0 libatk1.0-0 \
-    libx11-xcb1 libxcomposite1 libxcursor1 libxdamage1 \
-    libxrandr2 libgbm1 libpango-1.0-0 libpangocairo-1.0-0 \
-    libcairo2 libatspi2.0-0 libgtk-3-0 \
-    && curl -fsSL https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg \
-    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list \
-    && apt-get update && apt-get install -y --no-install-recommends google-chrome-stable \
-    \
-    # --- Get matching ChromeDriver ---
-    && CHROME_VERSION=$(google-chrome --version | grep -oE '[0-9.]+' | head -1) \
-    && DRIVER_VERSION=$(curl -s "https://googlechromelabs.github.io/chrome-for-testing/LATEST_RELEASE_${CHROME_VERSION%%.*}") \
-    && curl -Lo /tmp/chromedriver.zip "https://edgedl.me.gvt1.com/edgedl/chrome/chrome-for-testing/${DRIVER_VERSION}/linux64/chromedriver-linux64.zip" \
-    && unzip /tmp/chromedriver.zip -d /usr/local/bin/ \
-    && rm /tmp/chromedriver.zip \
-    \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
+# Download Chrome 130
+RUN ARCH="$(uname -m)"; \
+    if [ "$ARCH" = "x86_64" ]; then DOWNLOAD_ARCH="linux64"; \
+    elif [ "$ARCH" = "aarch64" ]; then DOWNLOAD_ARCH="linux-arm64"; \
+    else echo "Unsupported arch: $ARCH"; exit 1; fi; \
+    echo "Using arch: ${DOWNLOAD_ARCH}"; \
+    curl -fLo chrome.zip https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/${DOWNLOAD_ARCH}/chrome-${DOWNLOAD_ARCH}.zip && \
+    unzip chrome.zip -d /opt/ && \
+    mv /opt/chrome-${DOWNLOAD_ARCH} /opt/chrome && \
+    ln -s /opt/chrome/chrome /usr/local/bin/google-chrome && \
+    rm chrome.zip
 
+# Download matching ChromeDriver 130
+RUN ARCH="$(uname -m)"; \
+    if [ "$ARCH" = "x86_64" ]; then DOWNLOAD_ARCH="linux64"; \
+    elif [ "$ARCH" = "aarch64" ]; then DOWNLOAD_ARCH="linux-arm64"; \
+    else echo "Unsupported arch: $ARCH"; exit 1; fi; \
+    curl -fLo chromedriver.zip https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/${DOWNLOAD_ARCH}/chromedriver-${DOWNLOAD_ARCH}.zip && \
+    unzip chromedriver.zip -d /opt/ && \
+    mv /opt/chromedriver-${DOWNLOAD_ARCH}/chromedriver /usr/local/bin/chromedriver && \
+    chmod +x /usr/local/bin/chromedriver && \
+    rm -rf chromedriver.zip /opt/chromedriver-${DOWNLOAD_ARCH}
 
-# RUN apt-get update && apt-get install -y --no-install-recommends \
-#     wget curl ca-certificates entr \
-#     chromium chromium-driver \
-#     fonts-liberation fonts-dejavu-core fontconfig \
-#     && apt-get clean && rm -rf /var/lib/apt/lists/*
+# Create directories with proper permissions
+RUN mkdir -p /tmp/chrome-data /tmp/chrome-cache && \
+    chmod 777 /tmp/chrome-data /tmp/chrome-cache
 
 WORKDIR /app
 
@@ -42,6 +52,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt watchdog
 
-COPY --chown=appuser:appuser . .
+# Copy application code
+COPY . .
 
-USER appuser
+RUN python app/chrome_test.py

@@ -1,8 +1,3 @@
-"""
-Lyst.com Product Scraper
-A comprehensive scraper for Lyst.com product pages with anti-bot detection
-"""
-
 import time
 import random
 import json
@@ -17,7 +12,7 @@ import undetected_chromedriver as uc
 import logging
 
 
-class LystScraper:
+class LeamScraper:
     def __init__(self, headless=False, wait_time=10):
         """Initialize the scraper with undetected Chrome driver"""
         self.setup_logging()
@@ -69,7 +64,7 @@ class LystScraper:
             level=logging.INFO,
             format='%(asctime)s - %(levelname)s - %(message)s',
             handlers=[
-                # logging.FileHandler('lyst_scraper.log'),
+                logging.FileHandler('leam_scraper.log'),
                 logging.StreamHandler()
             ]
         )
@@ -93,9 +88,9 @@ class LystScraper:
         try:
             # Wait for the main product container to load
             main_selectors = [
-                'a.W2cCC[href*="/designer/"]',  # Brand name selector
-                'div._1b08vvhqu.vjlibs5.vjlibs2',  # Product name selector
-                'div._1b08vvhrq.vjlibs2'  # Price selector
+                '.price',
+                '[itemprop="name"]',
+                '.base[data-ui-id="page-title-wrapper"]'
             ]
 
             for selector in main_selectors:
@@ -155,12 +150,15 @@ class LystScraper:
     def get_brand_name(self):
         """Extract brand name from the product page"""
         try:
-            # Based on your HTML: <a class="W2cCC" href="/designer/the-row/">The Row</a>
+            # Updated based on your HTML: <h2><a href="https://www.leam.com/wrl_en/designers/valentino_garavani">VALENTINO GARAVANI</a></h2>
             selectors = [
-                'a.W2cCC[href*="/designer/"]',  # Primary selector
-                'a[href*="/designer/"].W2cCC',  # Alternative order
-                'a[href*="/designer/"]',        # Fallback without class
-                '.W2cCC[href*="/designer/"]'    # Class first
+                # Primary selector - brand link inside h2
+                'h2 a[href*="/designers/"]',
+                'a[href*="/designers/"]',     # Direct link selector
+                'h2 a[href*="designers"]',    # Alternative with h2
+                'a[href*="designers"]',       # Alternative without h2
+                '.product-brand a',
+                '.designer-link'
             ]
 
             for selector in selectors:
@@ -168,10 +166,36 @@ class LystScraper:
                 if element:
                     brand = self.extract_text_safely(element)
                     if brand:
-                        self.logger.info(f"Found brand name: {brand}")
+                        self.logger.info(
+                            f"Found brand name with selector '{selector}': {brand}")
                         return brand
 
-            self.logger.warning("Brand name not found")
+            # Additional debugging - try to find any h2 elements and log them
+            h2_elements = self.safe_find_elements('h2')
+            if h2_elements:
+                self.logger.info(
+                    f"Found {len(h2_elements)} h2 elements on page")
+                for i, h2 in enumerate(h2_elements):
+                    h2_text = self.extract_text_safely(h2)
+                    self.logger.info(f"H2 {i+1} text: {h2_text}")
+
+                    # Look for links inside each h2
+                    try:
+                        links = h2.find_elements(By.TAG_NAME, 'a')
+                        for link in links:
+                            href = self.extract_text_safely(link, 'href')
+                            text = self.extract_text_safely(link)
+                            self.logger.info(
+                                f"H2 {i+1} contains link: href='{href}', text='{text}'")
+                            if 'designers' in href.lower() and text:
+                                self.logger.info(
+                                    f"Found brand in debugging: {text}")
+                                return text
+                    except Exception as debug_e:
+                        self.logger.debug(f"Debug error: {debug_e}")
+
+            self.logger.warning(
+                "Brand name not found after trying all selectors")
             return ""
         except Exception as e:
             self.logger.error(f"Error extracting brand name: {str(e)}")
@@ -180,13 +204,17 @@ class LystScraper:
     def get_product_name(self):
         """Extract product name from the product page"""
         try:
-            # Based on your HTML: <div class="_1b08vvhqu vjlibs5 vjlibs2" style="--vjlibs4: 2;">Women's Black Liisa Ankle Boots</div>
+            # Updated based on your HTML: <span class="base" data-ui-id="page-title-wrapper" itemprop="name">Chez Valentino T-shirt</span>
             selectors = [
-                'div._1b08vvhqu.vjlibs5.vjlibs2',  # Exact match from your HTML
-                # More flexible
-                'div[class*="_1b08vvhqu"][class*="vjlibs5"][class*="vjlibs2"]',
-                'div._1b08vvhqu',  # Partial match
-                'div[class*="_1b08vvhqu"]'  # Very flexible
+                # Exact match from your HTML
+                'span.base[data-ui-id="page-title-wrapper"][itemprop="name"]',
+                # Alternative without itemprop
+                '.base[data-ui-id="page-title-wrapper"]',
+                'h1.page-title .base',  # In case it's within h1
+                '.base[itemprop="name"]',  # Fallback with itemprop
+                # Fallback with just data-ui-id
+                '[data-ui-id="page-title-wrapper"]',
+                '[itemprop="name"]'  # Final fallback
             ]
 
             for selector in selectors:
@@ -203,96 +231,44 @@ class LystScraper:
             self.logger.error(f"Error extracting product name: {str(e)}")
             return ""
 
-    def click_product_details_dropdown(self):
-        """Click on the Product details dropdown to expand it"""
-        try:
-            # Based on your HTML: <div class="_1j1nmye3">
-            dropdown_selectors = [
-                'div._1j1nmye3',
-                'h2._1b08vvhru.vjlibs0.vjlibs2',  # The actual h2 element
-                'div[class*="_1j1nmye3"]'
-            ]
-
-            for selector in dropdown_selectors:
-                try:
-                    dropdown_element = self.safe_find_element(selector)
-                    if dropdown_element:
-                        # Scroll to element to make it visible
-                        self.driver.execute_script(
-                            "arguments[0].scrollIntoView(true);", dropdown_element)
-                        self.random_delay(1, 2)
-
-                        # Try to click the dropdown
-                        self.driver.execute_script(
-                            "arguments[0].click();", dropdown_element)
-                        self.logger.info("Clicked product details dropdown")
-
-                        # Wait a bit for the dropdown to expand
-                        self.random_delay(1, 2)
-                        return True
-                except Exception as e:
-                    self.logger.debug(
-                        f"Could not click with selector {selector}: {e}")
-                    continue
-
-            self.logger.warning("Could not click product details dropdown")
-            return False
-
-        except Exception as e:
-            self.logger.error(
-                f"Error clicking product details dropdown: {str(e)}")
-            return False
-
     def get_product_details(self):
-        """Extract product details by clicking dropdown and getting description"""
+        """Extract product details (description as product details)"""
         try:
-            # First, try to click the dropdown to expand it
-            dropdown_clicked = self.click_product_details_dropdown()
-
-            if dropdown_clicked:
-                # Wait for content to load
-                self.random_delay(1, 2)
-
-            # Based on your HTML: <div class="_1b08vvh31 *1b08vvhq6 vjlibs2">
-            # Note: The asterisk in the class name might be a typo, so we'll try different variations
+            # From your example: <div id="description">...</div>
             selectors = [
-                'div._1b08vvh31[class*="1b08vvhq6"].vjlibs2',  # Most specific
-                'div._1b08vvh31.vjlibs2',  # Without the problematic class
-                'div[class*="_1b08vvh31"][class*="vjlibs2"]',  # More flexible
-                'div[class*="_1b08vvh31"]',  # Just the first class
-                '.product-details-content',  # Generic fallback
-                '[data-testid="product-details"]'  # Another fallback
+                'div#description',
+                '#description',
+                '.product-description',
+                '.description',
+                '.product-details'
             ]
 
             for selector in selectors:
                 element = self.safe_find_element(selector)
                 if element:
-                    details = self.extract_text_safely(element)
-                    if details:
+                    description = self.extract_text_safely(element)
+                    if description:
                         # Clean up the description (remove extra whitespace, line breaks)
-                        details = ' '.join(details.split())
-                        self.logger.info(
-                            f"Found product details: {details[:100]}...")
-                        return details
+                        description = ' '.join(description.split())
+                        return description
 
-            self.logger.warning("Product details not found")
             return ""
-
         except Exception as e:
             self.logger.error(f"Error extracting product details: {str(e)}")
             return ""
 
     def get_image_urls(self):
-        """Extract product image URL"""
+        """Extract product image URL (single URL as string)"""
         try:
-            # Based on your HTML: <img class="qptelu3" ... src="https://cdna.lystit.com/...">
+            # From your example: <img alt="VALENTINO GARAVANI - Chez Valentino T-shirt" src="https://www.leam.com/media/catalog/product/...">
             selectors = [
-                'img.qptelu3',  # Exact match from your HTML
-                'img[class*="qptelu"]',  # Partial match
-                'img[src*="lystit.com"]',  # By domain
-                'img[alt*="Black Liisa Ankle Boots"]',  # By alt text pattern
-                '.product-image img',  # Generic fallback
-                'img[src*="photos"]'  # Generic photo selector
+                # Specific to your example
+                'img[alt*="VALENTINO"], img[alt*="GARAVANI"]',
+                '.product-image-main img',
+                '.product-image img',
+                'img[src*="/media/catalog/product/"]',
+                '.gallery-image img',
+                'img[alt*="-"]'  # Images with product names usually have dashes
             ]
 
             for selector in selectors:
@@ -300,10 +276,8 @@ class LystScraper:
                 if element:
                     img_url = self.extract_text_safely(element, 'src')
                     if img_url and img_url.startswith('http'):
-                        self.logger.info(f"Found image URL: {img_url}")
                         return img_url
 
-            self.logger.warning("Image URL not found")
             return ""
         except Exception as e:
             self.logger.error(f"Error extracting image URLs: {str(e)}")
@@ -312,40 +286,37 @@ class LystScraper:
     def get_original_price(self):
         """Extract original price"""
         try:
-            # Based on your HTML: <div class="_1b08vvhrq vjlibs2">$1,791.00</div>
+            # From your example: <span class="price">€483.61</span>
             selectors = [
-                'div._1b08vvhrq.vjlibs2',  # Exact match from your HTML
-                'div[class*="_1b08vvhrq"][class*="vjlibs2"]',  # More flexible
-                'div._1b08vvhrq',  # Partial match
-                'div[class*="_1b08vvhrq"]',  # Very flexible
-                '.price',  # Generic fallback
-                '[data-testid="price"]'  # Another fallback
+                'span.price',
+                '.price',
+                '.regular-price .price',
+                '.old-price',
+                '.original-price'
             ]
 
             for selector in selectors:
                 element = self.safe_find_element(selector)
                 if element:
                     price = self.extract_text_safely(element)
-                    if price and ('$' in price or '€' in price or '£' in price):
-                        self.logger.info(f"Found original price: {price}")
+                    if price and ('€' in price or '$' in price or '£' in price):
                         return price
 
-            self.logger.warning("Original price not found")
             return ""
         except Exception as e:
             self.logger.error(f"Error extracting original price: {str(e)}")
             return ""
 
     def get_discount(self):
-        """Extract discount percentage - Lyst might not always show discount"""
+        """Extract discount percentage"""
         try:
-            # Look for common discount selectors
+            # From your example: <span class="discountproductpage">50%</span>
             selectors = [
+                'span.discountproductpage',
+                '.discountproductpage',
                 '.discount',
-                '.sale-percentage',
-                '.price-reduction',
-                '[data-testid="discount"]',
-                'span[class*="discount"]'
+                '.percentage-discount',
+                '.price-discount'
             ]
 
             for selector in selectors:
@@ -353,99 +324,54 @@ class LystScraper:
                 if element:
                     discount = self.extract_text_safely(element)
                     if discount and '%' in discount:
-                        self.logger.info(f"Found discount: {discount}")
                         return discount
 
-            # If no explicit discount found, return empty
             return ""
         except Exception as e:
             self.logger.error(f"Error extracting discount: {str(e)}")
             return ""
 
-    def get_category_from_breadcrumb(self):
-        """Extract category information from breadcrumb - last 2 items"""
-        try:
-            # Based on your HTML: <ol class="_17myytj0"><li class="_17myytj1"><a href="/" class="_17myytj3"><span class="_17myytj2">Home</span></a></li>...
-            breadcrumb_selectors = [
-                'ol._17myytj0 li._17myytj1 span._17myytj2',  # Exact match
-                'ol[class*="_17myytj0"] span[class*="_17myytj2"]',  # More flexible
-                '.breadcrumb span',  # Generic fallback
-                'ol li span',  # Very generic
-                '[data-testid="breadcrumb"] span'  # Another fallback
-            ]
-
-            categories = []
-
-            for selector in breadcrumb_selectors:
-                elements = self.safe_find_elements(selector)
-                if elements:
-                    for element in elements:
-                        category = self.extract_text_safely(element)
-                        if category and category.lower() not in ['home', 'lyst']:
-                            categories.append(category)
-
-                    if categories:
-                        break
-
-            # Return last 2 categories as requested
-            if len(categories) >= 2:
-                last_two = categories[-2:]
-                category_string = ' > '.join(last_two)
-                self.logger.info(
-                    f"Found categories (last 2): {category_string}")
-                return category_string
-            elif categories:
-                category_string = ' > '.join(categories)
-                self.logger.info(f"Found categories (all): {category_string}")
-                return category_string
-
-            self.logger.warning("Categories not found in breadcrumb")
-            return ""
-
-        except Exception as e:
-            self.logger.error(f"Error extracting categories: {str(e)}")
-            return ""
-
     def get_size_and_fit(self):
-        """Extract size and fit information"""
+        """Extract size and fit information (available sizes)"""
         try:
-            # Look for size selectors on Lyst
-            size_selectors = [
-                'select[name*="size"]',
-                '.size-selector select',
-                '.product-options select',
-                '[data-testid="size-selector"]',
-                'select.size-dropdown'
-            ]
-
+            # From your example: <select name="super_attribute[138]" data-selector="super_attribute[138]"...>
             available_sizes = []
+
+            size_selectors = [
+                'select[name*="super_attribute"]',
+                'select.super-attribute-select',
+                'select[data-selector*="super_attribute"]',
+                '.size-selector select',
+                '.product-options select'
+            ]
 
             for selector in size_selectors:
                 try:
                     size_element = self.safe_find_element(selector)
                     if size_element:
+                        # Create a Select object to interact with the dropdown
                         select = Select(size_element)
                         options = select.options
 
                         for option in options:
                             size_text = self.extract_text_safely(option)
-                            if size_text and size_text not in ["Choose size", "Select size", ""]:
+                            if size_text and size_text != "Choose an Option...":
                                 available_sizes.append(size_text)
 
                         if available_sizes:
                             break
                 except Exception as e:
-                    self.logger.debug(
-                        f"Error with size selector {selector}: {e}")
+                    self.logger.debug(f"Error with selector {selector}: {e}")
                     continue
 
-            # If no dropdown found, look for size buttons/options
+            # If no sizes found in dropdown, try alternative methods
             if not available_sizes:
+                # Try to find size options in other elements
                 size_option_selectors = [
                     '.size-option',
-                    '.size-button',
-                    '[data-testid="size-option"]',
-                    '.product-size-option'
+                    '.swatch-option',
+                    '.product-option-value',
+                    '[data-option-type="1"] .swatch-option'  # Size swatches
                 ]
 
                 for selector in size_option_selectors:
@@ -455,19 +381,37 @@ class LystScraper:
                         if size_text and size_text not in available_sizes:
                             available_sizes.append(size_text)
 
+            # If sizes found, format them properly
             if available_sizes:
-                size_string = ', '.join(available_sizes)
-                self.logger.info(f"Found sizes: {size_string}")
-                return size_string
+                return ', '.join(available_sizes)
             else:
-                return "Size information not available"
+                # Return similar message to ModeSens format
+                return "Sign up to view all available sizes"
 
         except Exception as e:
             self.logger.error(f"Error extracting size and fit: {str(e)}")
             return ""
 
+    def get_category_breadcrumb(self):
+        """Extract category information from breadcrumb"""
+        try:
+            breadcrumb_elements = self.safe_find_elements(
+                '.breadcrumbs a, .breadcrumb a')
+            categories = []
+
+            for element in breadcrumb_elements:
+                category = self.extract_text_safely(element)
+                if category and category.lower() not in ['home', 'leam']:
+                    categories.append(category)
+
+            return ' > '.join(categories) if categories else ""
+
+        except Exception as e:
+            self.logger.error(f"Error extracting categories: {str(e)}")
+            return ""
+
     def get_multi_region_prices(self):
-        """Extract prices for multiple regions"""
+        """Extract prices for multiple regions (AED, USD, GBP, EUR)"""
         try:
             price_data = {
                 'price_aed': '',
@@ -476,15 +420,15 @@ class LystScraper:
                 'price_eur': ''
             }
 
-            # Get the original price first
+            # Get the original price first to determine main currency
             original_price = self.get_original_price()
 
             if original_price:
-                # Determine currency and assign to appropriate field
-                if '$' in original_price:
-                    price_data['price_usd'] = original_price
-                elif '€' in original_price:
+                # Determine which currency the original price is in and assign it
+                if '€' in original_price:
                     price_data['price_eur'] = original_price
+                elif '$' in original_price:
+                    price_data['price_usd'] = original_price
                 elif '£' in original_price:
                     price_data['price_gbp'] = original_price
                 elif 'AED' in original_price.upper():
@@ -518,24 +462,29 @@ class LystScraper:
             self.wait_for_page_load()
             time.sleep(2)
 
-            # Extract all product data
+            # Extract brand and product names using updated methods
+            brand_name = self.get_brand_name()
+            product_name = self.get_product_name()
+
+            # Extract all product data in the exact format as ModeSens
             product_data = {
                 'product_url': url,
-                'brand': self.get_brand_name(),
-                'product_name': self.get_product_name(),
-                # This will click dropdown and get details
+                'brand': brand_name,  # Brand name from designer link
+                'product_name': product_name,  # Product name from page title
+                # This is the actual product description
                 'product_details': self.get_product_details(),
-                'category': self.get_category_from_breadcrumb(),
-                'image_urls': self.get_image_urls(),
+                'category': self.get_category_breadcrumb(),
+                'image_urls': self.get_image_urls(),  # Single URL as string
                 'original_price': self.get_original_price(),
                 'discount': self.get_discount(),
-                'size_and_fit': self.get_size_and_fit()
+                'size_and_fit': self.get_size_and_fit()  # Renamed from available_sizes
             }
 
-            # Calculate sale price if discount exists
+            # Calculate sale price if discount is available
             sale_price = ""
             if product_data['original_price'] and product_data['discount']:
                 try:
+                    # Extract price number
                     price_match = re.search(
                         r'[\d,]+\.?\d*', product_data['original_price'])
                     discount_match = re.search(
@@ -545,10 +494,14 @@ class LystScraper:
                         price_value = float(
                             price_match.group().replace(',', ''))
                         discount_percent = int(discount_match.group())
+
+                        # Calculate sale price
                         sale_value = price_value * (1 - discount_percent / 100)
 
-                        currency = '$' if '$' in product_data['original_price'] else '€' if '€' in product_data[
+                        # Extract currency symbol
+                        currency = '€' if '€' in product_data['original_price'] else '$' if '$' in product_data[
                             'original_price'] else '£' if '£' in product_data['original_price'] else ''
+
                         sale_price = f"{currency}{sale_value:.2f}"
 
                 except Exception as e:
@@ -556,7 +509,7 @@ class LystScraper:
 
             product_data['sale_price'] = sale_price
 
-            # Add multi-region pricing
+            # Add multi-region price information to match ModeSens format
             price_info = self.get_multi_region_prices()
             product_data.update(price_info)
 
@@ -584,22 +537,23 @@ class LystScraper:
                     self.data_list.append(product_data)
 
                 # Random delay between requests
-                if i < len(urls) - 1:
+                if i < len(urls) - 1:  # Don't delay after the last URL
                     self.random_delay(3, 7)
 
             except Exception as e:
                 self.logger.error(f"Error processing URL {url}: {str(e)}")
                 continue
 
-        return results[0]
+        return results
 
-    def save_to_csv(self, filename='lyst_products.csv'):
+    def save_to_csv(self, filename='leam_products.csv'):
         """Save scraped data to CSV file"""
         try:
             if not self.data_list:
                 self.logger.warning("No data to save to CSV")
                 return
 
+            # Define CSV headers to match ModeSens output exactly
             headers = [
                 'product_url', 'brand', 'product_name', 'product_details', 'category',
                 'image_urls', 'original_price', 'sale_price', 'discount',
@@ -611,6 +565,7 @@ class LystScraper:
                 writer.writeheader()
 
                 for data in self.data_list:
+                    # Ensure all headers are present in data
                     row_data = {header: data.get(header, '')
                                 for header in headers}
                     writer.writerow(row_data)
@@ -620,7 +575,7 @@ class LystScraper:
         except Exception as e:
             self.logger.error(f"Error saving to CSV: {str(e)}")
 
-    def save_to_json(self, filename='lyst_products.json'):
+    def save_to_json(self, filename='leam_products.json'):
         """Save scraped data to JSON file"""
         try:
             if not self.data_list:
@@ -645,6 +600,7 @@ class LystScraper:
         except Exception as e:
             self.logger.error(f"Error closing browser: {str(e)}")
         finally:
+            # Additional cleanup to prevent handle errors
             try:
                 import gc
                 gc.collect()

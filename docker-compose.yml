@@ -24,11 +24,14 @@ services:
     restart: unless-stopped
 
   worker:
+    platform: linux/amd64
     build:
       context: .
       dockerfile: Dockerfile.worker
     container_name: celery_worker
     shm_size: 2gb
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=1g
     volumes:
       - .:/app
     environment:
