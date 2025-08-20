@@ -22,7 +22,6 @@ RUN apt-get -y update && \
 # Download Chrome 130
 RUN ARCH="$(uname -m)"; \
     if [ "$ARCH" = "x86_64" ]; then DOWNLOAD_ARCH="linux64"; \
-    elif [ "$ARCH" = "aarch64" ]; then DOWNLOAD_ARCH="linux-arm64"; \
     else echo "Unsupported arch: $ARCH"; exit 1; fi; \
     echo "Using arch: ${DOWNLOAD_ARCH}"; \
     curl -fLo chrome.zip https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/${DOWNLOAD_ARCH}/chrome-${DOWNLOAD_ARCH}.zip && \
@@ -34,7 +33,6 @@ RUN ARCH="$(uname -m)"; \
 # Download matching ChromeDriver 130
 RUN ARCH="$(uname -m)"; \
     if [ "$ARCH" = "x86_64" ]; then DOWNLOAD_ARCH="linux64"; \
-    elif [ "$ARCH" = "aarch64" ]; then DOWNLOAD_ARCH="linux-arm64"; \
     else echo "Unsupported arch: $ARCH"; exit 1; fi; \
     curl -fLo chromedriver.zip https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/${DOWNLOAD_ARCH}/chromedriver-${DOWNLOAD_ARCH}.zip && \
     unzip chromedriver.zip -d /opt/ && \

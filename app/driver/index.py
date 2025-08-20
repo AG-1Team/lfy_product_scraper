@@ -10,92 +10,52 @@ from selenium_stealth import stealth
 
 
 def setup_farfetch_driver():
-    """Setup stealth-enabled Chromium driver optimized for server environments"""
+    """Setup stealth-enabled Chrome driver optimized for server environments"""
     try:
         # Rotate user agent
         ua = UserAgent()
         user_agent = ua.random
         print(f"[*] Using User-Agent: {user_agent}")
 
-        # Chromium options with server-specific configurations
+        # Chrome options with server-specific configurations
         options = Options()
         options.add_argument(f"user-agent={user_agent}")
+        options.add_argument("--headless=new")
 
-        # CRITICAL: Server-specific arguments
-        options.add_argument("--headless=new")  # Use new headless mode
-        options.add_argument("--no-sandbox")  # Required for Docker/containers
-        options.add_argument("--disable-dev-shm-usage")  # Prevents crashes
-        options.add_argument("--disable-gpu")  # No GPU on most servers
-
-        # DOCKER SPECIFIC: Critical for containerized environments
-        options.add_argument("--single-process")  # Run in single process mode
-        options.add_argument("--disable-setuid-sandbox")
+        options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
-        options.add_argument("--no-zygote")  # Disable zygote process
-        options.add_argument("--disable-gpu-sandbox")
-        options.add_argument("--remote-debugging-port=9222")
-        options.add_argument("--remote-debugging-address=0.0.0.0")
 
-        # Memory and shared memory fixes
-        options.add_argument("--disable-software-rasterizer")
-        options.add_argument("--disable-background-timer-throttling")
-        options.add_argument("--disable-renderer-backgrounding")
-        options.add_argument("--disable-backgrounding-occluded-windows")
-        options.add_argument("--disable-client-side-phishing-detection")
-        options.add_argument("--disable-crash-reporter")
-        options.add_argument("--disable-oopr-debug-crash-dump")
-        options.add_argument("--no-crash-upload")
-        options.add_argument("--disable-low-res-tiling")
-        options.add_argument("--disable-extensions")
-        options.add_argument("--disable-plugins")
-        options.add_argument("--disable-sync")
-        options.add_argument("--disable-default-apps")
-        options.add_argument("--hide-scrollbars")
-        options.add_argument("--mute-audio")
-        options.add_argument("--disable-infobars")
         options.add_argument("--disable-web-security")
-        options.add_argument("--disable-features=VizDisplayCompositor")
-        options.add_argument("--disable-ipc-flooding-protection")
-
-        # Memory and performance optimizations for servers
-        options.add_argument("--memory-pressure-off")
-        options.add_argument("--max_old_space_size=4096")
-        options.add_argument("--disable-background-networking")
-        options.add_argument("--disable-logging")
-        options.add_argument("--disable-gpu-logging")
-        options.add_argument("--silent")
-        options.add_argument("--disable-features=TranslateUI")
-        options.add_argument("--disable-features=BlinkGenPropertyTrees")
-
-        # Anti-detection
         options.add_argument("--disable-blink-features=AutomationControlled")
-        options.add_experimental_option(
-            "excludeSwitches", ["enable-automation", "enable-logging"])
-        options.add_experimental_option('useAutomationExtension', False)
+        options.add_argument("--disable-gpu")
+        options.add_argument("--allow-running-insecure-content")
+
+        options.add_argument("--disable-extensions")
+        options.add_argument("--disable-plugins-discovery")
+        options.add_argument("--disable-web-security")
 
         # Window size (important even in headless mode)
         options.add_argument("--window-size=1920,1080")
 
-        # CHROMIUM SPECIFIC: Set binary location
-        chromium_paths = [
-            '/usr/bin/chromium',        # Most common on Debian/Ubuntu
-            '/usr/bin/chromium-browser',  # Alternative name
-            '/snap/bin/chromium',       # Snap package
-            '/usr/bin/google-chrome',   # Fallback if Chrome is installed
-            '/usr/bin/google-chrome-stable'
+        # CHROME SPECIFIC: Set binary location
+        chrome_paths = [
+            '/usr/bin/google-chrome',
+            '/usr/bin/google-chrome-stable',
+            '/opt/chrome/chrome',          # custom install path
+            '/usr/local/bin/google-chrome'  # symlink from Dockerfile
         ]
 
-        chromium_binary = None
-        for path in chromium_paths:
+        chrome_binary = None
+        for path in chrome_paths:
             if os.path.exists(path):
-                chromium_binary = path
-                print(f"[*] Found Chromium binary at: {path}")
+                chrome_binary = path
+                print(f"[*] Found Chrome binary at: {path}")
                 break
 
-        if chromium_binary:
-            options.binary_location = chromium_binary
+        if chrome_binary:
+            options.binary_location = chrome_binary
         else:
-            print("[Warning] No Chromium binary found, trying default...")
+            print("[Warning] No Chrome binary found, trying default...")
 
         # Additional prefs for better performance
         prefs = {
@@ -110,17 +70,14 @@ def setup_farfetch_driver():
         options.add_experimental_option("prefs", prefs)
 
         # Find ChromeDriver (system package only)
-        chromium_driver_paths = [
+        chrome_driver_paths = [
             '/usr/bin/chromedriver',           # System chromedriver
-            '/usr/lib/chromium-browser/chromedriver',  # Chromium package
-            '/usr/bin/chromium-chromedriver',  # Alternative name
-            '/snap/bin/chromium.chromedriver',  # Snap package
             '/opt/chromedriver',               # Custom install
             '/usr/local/bin/chromedriver'      # Manual install
         ]
 
         driver_path = None
-        for path in chromium_driver_paths:
+        for path in chrome_driver_paths:
             if os.path.exists(path):
                 # Check if it's executable
                 if os.access(path, os.X_OK):
@@ -147,7 +104,7 @@ def setup_farfetch_driver():
             print("[Error] ChromeDriver not found anywhere")
             print("[*] Installation commands:")
             print("    sudo apt-get update")
-            print("    sudo apt-get install chromium chromium-driver")
+            print("    sudo apt-get install chrome chrome-driver")
             print("    # or")
             print("    sudo apt-get install google-chrome-stable")
             return None
@@ -175,12 +132,12 @@ def setup_farfetch_driver():
             ])
 
             driver = webdriver.Chrome(service=service, options=options)
-            print("[*] Using system chromium-chromedriver")
+            print("[*] Using system chromedriver")
         except Exception as e:
             print(f"[Error] Failed to initialize driver: {e}")
             print("[*] Troubleshooting:")
             print(f"    - ChromeDriver path: {driver_path}")
-            print(f"    - Chromium binary: {chromium_binary}")
+            print(f"    - Chrome binary: {chrome_binary}")
             print("    - Check permissions: ls -la", driver_path)
             print("    - Check chromedriver log: cat /tmp/chromedriver.log")
             return None
@@ -228,9 +185,9 @@ def setup_farfetch_driver():
 
     except Exception as e:
         print(f"[Error] Failed to setup driver: {e}")
-        print("[*] Chromium setup checklist:")
-        print("    1. Install: sudo apt-get install chromium chromium-driver")
-        print("    2. Test browser: chromium --version")
+        print("[*] Chrome setup checklist:")
+        print("    1. Install: sudo apt-get install chrome chrome-driver")
+        print("    2. Test browser: chrome --version")
         print("    3. Test driver: chromedriver --version")
         print("    4. Check permissions: ls -la /usr/bin/chromedriver")
         print("    5. Check shared memory: df -h /dev/shm")
@@ -240,7 +197,7 @@ def setup_farfetch_driver():
 def detect_browser():
     """Detect which browser is available on the system"""
     browsers = {
-        'chromium': ['/usr/bin/chromium', '/usr/bin/chromium-browser'],
+        'chrome': ['/usr/bin/chrome', '/usr/bin/chrome-browser'],
         'chrome': ['/usr/bin/google-chrome', '/usr/bin/google-chrome-stable']
     }
 

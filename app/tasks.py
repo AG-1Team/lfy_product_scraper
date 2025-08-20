@@ -1,6 +1,7 @@
 # tasks.py
-from celery import Celery, shared_task, signals
+import os
 import requests
+from celery import Celery, shared_task, signals
 from .driver.index import setup_farfetch_driver
 from .farfetch.index import farfetch_retrieve_products
 from .scrapers.lyst import LystScraper
@@ -25,6 +26,8 @@ WEBHOOK_URL = "https://hook.eu2.make.com/8set6v5sh27som4jqyactxvkyb7idyko"
 
 # keep a dict of drivers
 drivers = {}
+
+PRODUCTION_ENV = os.getenv("PYTHON_ENV")
 
 
 def get_driver(website: str):
@@ -99,7 +102,11 @@ def scrape_product_and_notify(url, medusa_product_data, website):
     print("DATA retrieved:", data)
     # Send results to Node.js webhook
     try:
-        print("[ℹ] Sending data to webhook...")
-        # requests.post(WEBHOOK_URL, json={"url": url, "data": data})
+        if PRODUCTION_ENV == "production":
+            # Uncomment the next line to enable webhook in production
+            requests.post(WEBHOOK_URL, json={"url": url, "data": data})
+            print("[✔] Webhook sent successfully")
+        else:
+            print("[ℹ] Webhook not sent in development mode")
     except Exception as e:
         print(f"[⚠] Failed to send webhook: {e}")
