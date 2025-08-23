@@ -12,8 +12,8 @@ services:
       - FLASK_APP=app.run
       - FLASK_ENV=production # Changed to development for hot reload
       - FLASK_DEBUG=0
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://:a2445d5e-7aaa-42a0-919e-c2f645a82f10@redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://:a2445d5e-7aaa-42a0-919e-c2f645a82f10@redis:6379/0
       - PYTHONUNBUFFERED=1
     depends_on:
       - redis
@@ -33,8 +33,8 @@ services:
     volumes:
       - .:/app
     environment:
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://:a2445d5e-7aaa-42a0-919e-c2f645a82f10@redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://:a2445d5e-7aaa-42a0-919e-c2f645a82f10@redis:6379/0
       - PYTHONUNBUFFERED=1
       - DISPLAY=:99
       - CHROMIUM_FLAGS=--no-sandbox --disable-dev-shm-usage
@@ -48,23 +48,24 @@ services:
   redis:
     image: redis:7
     container_name: redis
-    ports:
-      - "6379:6379"
     restart: unless-stopped
-
-  caddy:
-    image: caddy:2-alpine
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile
-      - caddy_data:/data
-      - caddy_config:/config
-    depends_on:
-      - web
+      - ./redis.conf:/usr/local/etc/redis/redis.conf
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
 
-volumes:
-  caddy_data:
-  caddy_config:
+#   caddy:
+#     image: caddy:2-alpine
+#     restart: unless-stopped
+#     ports:
+#       - "80:80"
+#       - "443:443"
+#     volumes:
+#       - ./Caddyfile:/etc/caddy/Caddyfile
+#       - caddy_data:/data
+#       - caddy_config:/config
+#     depends_on:
+#       - web
+
+# volumes:
+#   caddy_data:
+#   caddy_config:
