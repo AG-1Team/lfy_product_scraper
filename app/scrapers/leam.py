@@ -10,6 +10,7 @@ from selenium.webdriver.support.select import Select
 from selenium.common.exceptions import TimeoutException
 import undetected_chromedriver as uc
 import logging
+from ..utils.index import setup_scraping_driver
 
 
 class LeamScraper:
@@ -19,42 +20,8 @@ class LeamScraper:
         self.wait_time = wait_time
         self.data_list = []
 
-        # Initialize undetected Chrome driver
-        options = uc.ChromeOptions()
-
-        # User agent rotation
-        user_agents = [
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        ]
-        options.add_argument(f"--user-agent={random.choice(user_agents)}")
-
-        # options = Options()
-        if headless:
-            options.add_argument("--headless=new")
-
-        options.add_argument("--no-sandbox")
-        options.add_argument("--disable-dev-shm-usage")
-
-        options.add_argument("--disable-web-security")
-        options.add_argument("--disable-blink-features=AutomationControlled")
-        options.add_argument("--disable-gpu")
-        options.add_argument("--allow-running-insecure-content")
-
-        options.add_argument("--disable-extensions")
-        options.add_argument("--disable-plugins-discovery")
-        options.add_argument("--disable-web-security")
-
-        options.binary_location = "/usr/local/bin/google-chrome"
-
         # Initialize undetected Chrome
-        self.driver = uc.Chrome(
-            headless=headless, options=options, use_subprocess=False, version_main=130)
-
-        # Execute script to remove webdriver property
-        self.driver.execute_script(
-            "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        self.driver = setup_scraping_driver(headless=headless)
 
         self.wait = WebDriverWait(self.driver, wait_time)
 

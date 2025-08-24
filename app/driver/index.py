@@ -7,6 +7,7 @@ from selenium.webdriver.chrome.options import Options
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium_stealth import stealth
+from ..utils.index import create_proxy_extension
 
 
 def setup_farfetch_driver():
@@ -36,6 +37,9 @@ def setup_farfetch_driver():
 
         # Window size (important even in headless mode)
         options.add_argument("--window-size=1920,1080")
+
+        ext_path = create_proxy_extension()
+        options.add_extension(ext_path)
 
         # CHROME SPECIFIC: Set binary location
         chrome_paths = [

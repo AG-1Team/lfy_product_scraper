@@ -10,6 +10,7 @@ from selenium.webdriver.common.action_chains import ActionChains
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 import undetected_chromedriver as uc
 import logging
+from ..utils.index import setup_scraping_driver
 
 
 class ModeSensScraper:
@@ -19,43 +20,8 @@ class ModeSensScraper:
         self.wait_time = wait_time
         self.data_list = []
 
-        # Initialize undetected Chrome driver
-        options = uc.ChromeOptions()
-
-        # User agent rotation
-        user_agents = [
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.6367.60 Safari/537.36",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.6367.60 Safari/537.36 Edg/124.0.2478.51",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.6367.60 Safari/537.36",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:125.0) Gecko/20100101 Firefox/125.0"
-        ]
-
-        options.add_argument(f"--user-agent={random.choice(user_agents)}")
-
-        # options = Options()
-        if headless:
-            options.add_argument("--headless=new")
-
-        options.add_argument("--no-sandbox")
-        options.add_argument("--disable-dev-shm-usage")
-
-        options.add_argument("--disable-web-security")
-        options.add_argument("--disable-blink-features=AutomationControlled")
-        options.add_argument("--disable-gpu")
-        options.add_argument("--allow-running-insecure-content")
-
-        options.add_argument("--disable-extensions")
-        options.add_argument("--disable-plugins-discovery")
-        options.add_argument("--disable-web-security")
-
-        options.binary_location = "/usr/local/bin/google-chrome"
-
         # Initialize undetected Chrome
-        self.driver = uc.Chrome(
-            headless=headless, options=options, use_subprocess=False, version_main=130)
+        self.driver = setup_scraping_driver(headless=headless)
 
         # Execute script to remove webdriver property
         self.driver.execute_script(
@@ -66,11 +32,11 @@ class ModeSensScraper:
         # Define target regions for price extraction
         self.target_regions = [
             {'country': 'United States', 'currency': 'USD', 'key': 'price_usd'},
-            {'country': 'United Kingdom', 'currency': 'GBP', 'key': 'price_gbp'},
-            {'country': 'United Arab Emirates',
-                'currency': 'AED', 'key': 'price_aed'},
-            {'country': 'Germany (Deutschland)',
-             'currency': 'EUR', 'key': 'price_eur'}
+            # {'country': 'United Kingdom', 'currency': 'GBP', 'key': 'price_gbp'},
+            # {'country': 'United Arab Emirates',
+            #     'currency': 'AED', 'key': 'price_aed'},
+            # {'country': 'Germany (Deutschland)',
+            #  'currency': 'EUR', 'key': 'price_eur'}
         ]
 
     def setup_logging(self):

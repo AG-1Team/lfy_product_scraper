@@ -10,6 +10,19 @@ from .scrapers.reversible import ReversibleScraper
 from .scrapers.leam import LeamScraper
 from .scrapers.selfridge import SelfridgesScraper
 from .scrapers.italist import ItalistScraper
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+import os
+from .db.index import Base, MedusaProduct, FarfetchProduct, LystProduct, ItalistProduct, LeamProduct, ModesensProduct, ReversibleProduct, SelfridgeProduct
+from .utils.index import save_scraped_data
+
+DATABASE_URL = os.getenv(
+    "DATABASE_URL", "postgresql://user:password@localhost:5432/mydb")
+
+engine = create_engine(DATABASE_URL)
+Base.metadata.create_all(engine)
+Session = sessionmaker(bind=engine)
+session = Session()
 
 celery = Celery("tasks")
 
@@ -51,8 +64,6 @@ def get_driver(website: str):
             drivers[website] = SelfridgesScraper(headless=True, wait_time=15)
         elif website == "italist":
             drivers[website] = ItalistScraper(headless=True, wait_time=15)
-        # elif website == "other":
-        #     drivers[website] = setup_driver(profile="other")
         else:
             raise ValueError(f"No driver setup defined for {website}")
 
@@ -77,6 +88,51 @@ def shutdown_all_drivers(**kwargs):
 
 @shared_task(name="scrap_product_url")
 def scrape_product_and_notify(url, medusa_product_data, website):
+    # 🚨 Check if already processed
+    if website == "farfetch":
+        existing = session.query(FarfetchProduct).filter_by(
+            product_url=url).first()
+        if existing:
+            print(f"[⏩] Skipping {url} (already scraped)")
+            return
+    elif website == "lyst":
+        existing = session.query(LystProduct).filter_by(
+            product_url=url).first()
+        if existing:
+            print(f"[⏩] Skipping {url} (already scraped)")
+            return
+    elif website == "italist":
+        existing = session.query(ItalistProduct).filter_by(
+            product_url=url).first()
+        if existing:
+            print(f"[⏩] Skipping {url} (already scraped)")
+            return
+    elif website == "leam":
+        existing = session.query(LeamProduct).filter_by(
+            product_url=url).first()
+        if existing:
+            print(f"[⏩] Skipping {url} (already scraped)")
+            return
+    elif website == "modesens":
+        existing = session.query(ModesensProduct).filter_by(
+            product_url=url).first()
+        if existing:
+            print(f"[⏩] Skipping {url} (already scraped)")
+            return
+    elif website == "reversible":
+        existing = session.query(ReversibleProduct).filter_by(
+            product_url=url).first()
+        if existing:
+            print(f"[⏩] Skipping {url} (already scraped)")
+            return
+    elif website == "selfridge":
+        existing = session.query(SelfridgeProduct).filter_by(
+            product_url=url).first()
+        if existing:
+            print(f"[⏩] Skipping {url} (already scraped)")
+            return
+
+
     driver = get_driver(website)
 
     data = {}
@@ -97,16 +153,60 @@ def scrape_product_and_notify(url, medusa_product_data, website):
     else:
         raise ValueError(f"Website {website} is not supported")
 
-    data["medusa"] = medusa_product_data
+    # ❌ If scraper failed → don’t insert anything
+    if data[website] is None:
+        print(f"[❌] No data scraped from {website} for URL {url}")
+        return
 
-    print("DATA retrieved:", data)
-    # Send results to Node.js webhook
+    data["medusa"] = medusa_product_data
+    print("Scraped data:", data)
+
+    medusa = session.get(MedusaProduct, medusa_product_data["id"])
+
     try:
-        if PRODUCTION_ENV == "production":
-            # Uncomment the next line to enable webhook in production
-            requests.post(WEBHOOK_URL, json={"url": url, "data": data})
-            print("[✔] Webhook sent successfully")
+        if not medusa:
+            medusa = MedusaProduct(
+                id=medusa_product_data["id"],
+                title=medusa_product_data["title"],
+                brand=medusa_product_data["brand"],
+                description=medusa_product_data["description"],
+                images=medusa_product_data["image_urls"],
+                thumbnail=medusa_product_data["thumbnail"]
+            )
+            session.add(medusa)
         else:
-            print("[ℹ] Webhook not sent in development mode")
+            medusa.title = medusa_product_data["title"]
+            medusa.brand = medusa_product_data["brand"]
+            medusa.description = medusa_product_data["description"]
+            medusa.images = medusa_product_data["image_urls"]
+            medusa.thumbnail = medusa_product_data["thumbnail"]
+
+            if website == "farfetch":
+                save_scraped_data(
+                    website, data, FarfetchProduct, session, medusa.id)
+            elif website == "lyst":
+                save_scraped_data(website, data, LystProduct,
+                                  session, medusa.id)
+            elif website == "italist":
+                save_scraped_data(
+                    website, data, ItalistProduct, session, medusa.id)
+            elif website == "leam":
+                save_scraped_data(website, data, LeamProduct,
+                                  session, medusa.id)
+            elif website == "modesens":
+                save_scraped_data(
+                    website, data, ModesensProduct, session, medusa.id)
+            elif website == "reversible":
+                save_scraped_data(
+                    website, data, ReversibleProduct, session, medusa.id)
+            elif website == "selfridge":
+                save_scraped_data(
+                    website, data, SelfridgeProduct, session, medusa.id)
+
+            session.add(medusa)
+            session.commit()
+            print(f"[✔] Data stored for {medusa.id} ({website})")
+
+
     except Exception as e:
-        print(f"[⚠] Failed to send webhook: {e}")
+        print(f"[⚠] Failed to add medusa product: {e}")

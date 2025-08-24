@@ -9,16 +9,20 @@ services:
     volumes:
       - .:/app
     environment:
-      - FLASK_APP=app.run
-      - FLASK_ENV=production # Changed to development for hot reload
-      - FLASK_DEBUG=0
+      # - FLASK_APP=app.run
+      # - FLASK_ENV=production # Changed to development for hot reload
+      # - FLASK_DEBUG=0
       - CELERY_BROKER_URL=redis://:a2445d5e-7aaa-42a0-919e-c2f645a82f10@redis:6379/0
       - CELERY_RESULT_BACKEND=redis://:a2445d5e-7aaa-42a0-919e-c2f645a82f10@redis:6379/0
       - PYTHONUNBUFFERED=1
+      - DATABASE_URL=postgresql://lfy_user_umar:lfy_pass_umar@postgres:5432/scraper_db
     depends_on:
       - redis
+      - postgres
+    # command: >
+    #   sh -c "python -m flask run --host=0.0.0.0 --port=5500"
     command: >
-      sh -c "python -m flask run --host=0.0.0.0 --port=5500"
+      sh -c "gunicorn -w 4 -k gevent -b 0.0.0.0:5500 app.run:app"
     restart: unless-stopped
 
   worker:
@@ -39,8 +43,10 @@ services:
       - DISPLAY=:99
       - CHROMIUM_FLAGS=--no-sandbox --disable-dev-shm-usage
       - PYTHON_ENV=production
+      - DATABASE_URL=postgresql://lfy_user_umar:lfy_pass_umar@postgres:5432/scraper_db
     depends_on:
       - redis
+      - postgres
     command: >
       sh -c "celery -A app.tasks worker --loglevel=info --concurrency=1 --pool=solo --without-heartbeat --without-mingle"
     restart: unless-stopped
@@ -53,19 +59,33 @@ services:
       - ./redis.conf:/usr/local/etc/redis/redis.conf
     command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
 
-  caddy:
-    image: caddy:2-alpine
-    restart: unless-stopped
+  postgres:
+    image: postgres:15
+    container_name: postgres
+    environment:
+      POSTGRES_USER: lfy_user_umar
+      POSTGRES_PASSWORD: lfy_pass_umar
+      POSTGRES_DB: scraper_db
     ports:
-      - "80:80"
-      - "443:443"
+      - "5432:5432"
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile
-      - caddy_data:/data
-      - caddy_config:/config
-    depends_on:
-      - web
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  # caddy:
+  #   image: caddy:2-alpine
+  #   restart: unless-stopped
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./Caddyfile:/etc/caddy/Caddyfile
+  #     - caddy_data:/data
+  #     - caddy_config:/config
+  #   depends_on:
+  #     - web
 
 volumes:
-  caddy_data:
-  caddy_config:
+  postgres_data:
+  # caddy_data:
+  # caddy_config:

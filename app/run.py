@@ -6,8 +6,16 @@ from .tasks import scrape_product_and_notify
 app = Flask(__name__)
 
 
+@app.before_request
+def check_api_key():
+    if request.endpoint == "scrape_products":  # only protect this route
+        client_key = request.headers.get("X-API-Key")
+        if client_key != "75db64f3-4822-4904-a1a1-dc2f3404d61d":
+            return jsonify({"error": "Unauthorized"}), 401
+
+
 @app.route("/scrape", methods=["POST"])
-def scrape_farfetch():
+def scrape_products():
     req_data = request.json
 
     if not req_data:

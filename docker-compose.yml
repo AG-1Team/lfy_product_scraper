@@ -16,8 +16,10 @@ services:
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - PYTHONUNBUFFERED=1
       - WATCHDOG_TRIGGER_FILE=/app/.reload_trigger
+      - DATABASE_URL=postgresql://lfy_user_umar:lfy_pass_umar@postgres:5432/scraper_db
     depends_on:
       - redis
+      - postgres
     command: >
       sh -c "watchmedo auto-restart --directory=/app --patterns='*.py' --recursive --signal SIGTERM 
       -- python -m flask run --host=0.0.0.0 --port=5500"
@@ -41,8 +43,10 @@ services:
       - DISPLAY=:99
       - CHROMIUM_FLAGS=--no-sandbox --disable-dev-shm-usage
       - WATCHDOG_TRIGGER_FILE=/app/.reload_trigger
+      - DATABASE_URL=postgresql://lfy_user_umar:lfy_pass_umar@postgres:5432/scraper_db
     depends_on:
       - redis
+      - postgres
     command: >
       sh -c "watchmedo auto-restart --directory=/app --patterns='*.py' --recursive --signal SIGTERM 
       -- celery -A app.tasks worker --loglevel=info --concurrency=1 --pool=solo --without-heartbeat --without-mingle"
@@ -54,3 +58,19 @@ services:
     ports:
       - "6379:6379"
     restart: unless-stopped
+
+  postgres:
+    image: postgres:15
+    container_name: postgres
+    environment:
+      POSTGRES_USER: lfy_user_umar
+      POSTGRES_PASSWORD: lfy_pass_umar
+      POSTGRES_DB: scraper_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
