@@ -38,8 +38,8 @@ def setup_farfetch_driver():
         # Window size (important even in headless mode)
         options.add_argument("--window-size=1920,1080")
 
-        ext_path = create_proxy_extension()
-        options.add_extension(ext_path)
+        # ext_path = create_proxy_extension()
+        # options.add_extension(ext_path)
 
         # CHROME SPECIFIC: Set binary location
         chrome_paths = [

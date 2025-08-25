@@ -2,6 +2,7 @@ import undetected_chromedriver as uc
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from bs4 import BeautifulSoup
 import random
 import zipfile
 import re
@@ -110,13 +111,8 @@ def setup_scraping_driver(headless=True, proxy_enabled=True):
     options.add_argument("--disable-plugins-discovery")
     options.add_argument("--allow-running-insecure-content")
 
-    if proxy_enabled:
-        # # Create and add proxy extension
-        # extension_path = create_proxy_extension()
-        # options.add_extension(extension_path)
-
-        # print(f"Created proxy extension at: {extension_path}")
-        options.add_argument('--proxy-server=pr.oxylabs.io:7777')
+    # if proxy_enabled:
+    # options.add_argument('--proxy-server=pr.oxylabs.io:7777')
 
     # Set Chrome binary location if needed
     # options.binary_location = "/usr/local/bin/google-chrome"
@@ -272,3 +268,20 @@ def save_scraped_data(website, data, db_model, sql_alchemy_session, medusa_id):
             # first valid image
             cleaned_data["thumbnail"] = urls[0]
         sql_alchemy_session.add(db_model(medusa_id=medusa_id, **cleaned_data))
+
+
+def extract_text(content: str) -> str:
+    """
+    Extracts readable text from either:
+    - HTML with tags (<p>, <div>, <span>, etc.)
+    - Plain string without HTML
+    Preserves line breaks for <br> tags.
+    """
+    if "<" in content and ">" in content:
+        soup = BeautifulSoup(content, "html.parser")
+        # Replace <br> with newline explicitly
+        for br in soup.find_all("br"):
+            br.replace_with("\n")
+        return soup.get_text(separator=" ", strip=True)
+
+    return content.strip()

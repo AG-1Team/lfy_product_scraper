@@ -12,7 +12,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 import os
 from .db.index import Base, MedusaProduct, FarfetchProduct, LystProduct, ItalistProduct, LeamProduct, ModesensProduct, ReversibleProduct, SelfridgeProduct
-from .utils.index import save_scraped_data
+from .utils.index import save_scraped_data, extract_text
 from datetime import datetime, timezone, timedelta
 from threading import Lock
 from selenium.common.exceptions import WebDriverException, InvalidSessionIdException
@@ -286,6 +286,8 @@ def scrape_product_and_notify(url, medusa_product_data, website):
         print(f"[❌] No data scraped from {website} for URL {url}")
         return
 
+    medusa_product_data["description"] = extract_text(
+        medusa_product_data["description"])
     data["medusa"] = medusa_product_data
     print("Scraped data:", data)
 
