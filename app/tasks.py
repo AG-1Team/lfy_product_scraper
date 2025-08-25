@@ -1,6 +1,4 @@
-# tasks.py
 import os
-import requests
 from celery import Celery, shared_task, signals
 from .driver.index import setup_farfetch_driver
 from .farfetch.index import farfetch_retrieve_products
@@ -92,15 +90,44 @@ def _safe_quit_close(driver, site_name=None):
 
 
 def _is_stale(entry: dict) -> bool:
-    return (datetime.now(timezone.utc) - entry["created_at"]) > DRIVER_TTL
+    """Check if driver entry is older than TTL"""
+    age = datetime.now(timezone.utc) - entry["created_at"]
+    is_stale = age > DRIVER_TTL
+    if is_stale:
+        print(f"[DEBUG] Driver is stale. Age: {age}, TTL: {DRIVER_TTL}")
+    return is_stale
 
 
 def _is_healthy(driver) -> bool:
     """Simple health check. Returns False on common session errors."""
     try:
-        # cheap call to webdriver — execute_script is usually safe
-        driver.execute_script("return 1")
-        return True
+        # Handle different driver types
+        actual_driver = None
+
+        # For custom scrapers that wrap WebDriver
+        if hasattr(driver, 'driver'):
+            actual_driver = driver.driver
+        # For custom scrapers that might use 'webdriver' attribute
+        elif hasattr(driver, 'webdriver'):
+            actual_driver = driver.webdriver
+        # For raw WebDriver objects
+        elif hasattr(driver, 'execute_script'):
+            actual_driver = driver
+        else:
+            # If we can't find the underlying driver, assume it's healthy
+            # This prevents unnecessary rotations for custom scrapers
+            print(
+                f"[DEBUG] Cannot determine driver type for health check, assuming healthy")
+            return True
+
+        if actual_driver and hasattr(actual_driver, 'execute_script'):
+            # cheap call to webdriver — execute_script is usually safe
+            actual_driver.execute_script("return 1")
+            return True
+        else:
+            print(f"[DEBUG] No execute_script method found, assuming healthy")
+            return True
+
     except (InvalidSessionIdException, WebDriverException) as e:
         print(f"[DEBUG] driver health check failed: {e}")
         return False
@@ -121,12 +148,19 @@ def rotate_drivers(force: bool = False):
                 should_rotate = force or _is_stale(
                     entry) or not _is_healthy(entry["driver"])
                 if should_rotate:
+                    age = datetime.now(timezone.utc) - entry['created_at']
+                    reason = "forced" if force else (
+                        "stale" if _is_stale(entry) else "unhealthy")
                     print(
-                        f"[ℹ] Rotating driver for {site} (age: {datetime.now(timezone.utc) - entry['created_at']})")
+                        f"[ℹ] Rotating driver for {site} - Reason: {reason}, Age: {age}")
                     _safe_quit_close(entry["driver"], site_name=site)
                     # create new driver and replace entry
                     drivers[site] = _init_driver_for_site(site)
                     print(f"[✓] Recreated driver for {site}")
+                else:
+                    age = datetime.now(timezone.utc) - entry['created_at']
+                    print(
+                        f"[DEBUG] Driver for {site} is healthy and fresh - Age: {age}")
             except Exception as e:
                 print(f"[ERROR] rotating driver for {site}: {e}")
 
@@ -136,19 +170,30 @@ def get_driver(website: str):
     global drivers
     with _drivers_lock:
         entry = drivers.get(website)
+
         if entry is None:
             print(f"[ℹ] Initializing driver for {website} (first time)...")
             drivers[website] = _init_driver_for_site(website)
             return drivers[website]["driver"]
 
-        # rotate if TTL passed or unhealthy
-        if _is_stale(entry) or not _is_healthy(entry["driver"]):
+        # Check if rotation is needed
+        is_stale = _is_stale(entry)
+        is_healthy = _is_healthy(entry["driver"])
+
+        if is_stale or not is_healthy:
+            age = datetime.now(timezone.utc) - entry['created_at']
+            reason = "stale" if is_stale else "unhealthy"
             print(
-                f"[ℹ] Driver for {website} is stale/unhealthy -> rotating now...")
+                f"[ℹ] Driver for {website} is {reason} (age: {age}) -> rotating now...")
             _safe_quit_close(entry["driver"], site_name=website)
             drivers[website] = _init_driver_for_site(website)
+        else:
+            age = datetime.now(timezone.utc) - entry['created_at']
+            print(
+                f"[DEBUG] Using existing healthy driver for {website} (age: {age})")
 
         return drivers[website]["driver"]
+
 
 # wire shutdown to Celery signal as you already do
 @signals.worker_process_shutdown.connect
@@ -165,6 +210,7 @@ def shutdown_all_drivers(**kwargs):
                 print(f"✓ Closed {site} driver")
             except Exception as e:
                 print(f"⚠ Failed closing {site} driver: {e}")
+
 
 @shared_task(name="scrap_product_url")
 def scrape_product_and_notify(url, medusa_product_data, website):
@@ -212,11 +258,8 @@ def scrape_product_and_notify(url, medusa_product_data, website):
             print(f"[⏩] Skipping {url} (already scraped)")
             return
 
-    # rotate stale drivers before processing (this is cheap and safe)
-    try:
-        rotate_drivers()
-    except Exception as e:
-        print(f"[WARN] rotate_drivers error at task start: {e}")
+    # 🔄 REMOVED: rotate_drivers() call that was causing premature rotation
+    # Now get_driver() will handle rotation only when needed (TTL exceeded or unhealthy)
 
     driver = get_driver(website)
 
@@ -238,7 +281,7 @@ def scrape_product_and_notify(url, medusa_product_data, website):
     else:
         raise ValueError(f"Website {website} is not supported")
 
-    # ❌ If scraper failed → don’t insert anything
+    # ❌ If scraper failed → don't insert anything
     if data[website] is None:
         print(f"[❌] No data scraped from {website} for URL {url}")
         return
@@ -266,32 +309,31 @@ def scrape_product_and_notify(url, medusa_product_data, website):
             medusa.images = medusa_product_data["image_urls"]
             medusa.thumbnail = medusa_product_data["thumbnail"]
 
-            if website == "farfetch":
-                save_scraped_data(
-                    website, data, FarfetchProduct, session, medusa.id)
-            elif website == "lyst":
-                save_scraped_data(website, data, LystProduct,
-                                  session, medusa.id)
-            elif website == "italist":
-                save_scraped_data(
-                    website, data, ItalistProduct, session, medusa.id)
-            elif website == "leam":
-                save_scraped_data(website, data, LeamProduct,
-                                  session, medusa.id)
-            elif website == "modesens":
-                save_scraped_data(
-                    website, data, ModesensProduct, session, medusa.id)
-            elif website == "reversible":
-                save_scraped_data(
-                    website, data, ReversibleProduct, session, medusa.id)
-            elif website == "selfridge":
-                save_scraped_data(
-                    website, data, SelfridgeProduct, session, medusa.id)
+        if website == "farfetch":
+            save_scraped_data(
+                website, data, FarfetchProduct, session, medusa.id)
+        elif website == "lyst":
+            save_scraped_data(website, data, LystProduct,
+                              session, medusa.id)
+        elif website == "italist":
+            save_scraped_data(
+                website, data, ItalistProduct, session, medusa.id)
+        elif website == "leam":
+            save_scraped_data(website, data, LeamProduct,
+                              session, medusa.id)
+        elif website == "modesens":
+            save_scraped_data(
+                website, data, ModesensProduct, session, medusa.id)
+        elif website == "reversible":
+            save_scraped_data(
+                website, data, ReversibleProduct, session, medusa.id)
+        elif website == "selfridge":
+            save_scraped_data(
+                website, data, SelfridgeProduct, session, medusa.id)
 
-            session.add(medusa)
-            session.commit()
-            print(f"[✔] Data stored for {medusa.id} ({website})")
-
+        session.add(medusa)
+        session.commit()
+        print(f"[✔] Data stored for {medusa.id} ({website})")
 
     except Exception as e:
         print(f"[⚠] Failed to add medusa product: {e}")

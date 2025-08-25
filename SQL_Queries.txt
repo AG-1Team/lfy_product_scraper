@@ -1,0 +1,9 @@
+SELECT m.id, m.title, f.product_name, l.product_name, i.product_name, le.product_name, mo.product_name, r.product_name, s.product_name
+FROM product m
+LEFT JOIN farfetch f ON f.medusa_id = m.id
+LEFT JOIN lyst l ON l.medusa_id = m.id
+LEFT JOIN italist i ON l.medusa_id = m.id
+LEFT JOIN leam le ON l.medusa_id = m.id
+LEFT JOIN modesens mo ON l.medusa_id = m.id
+LEFT JOIN reversible r ON l.medusa_id = m.id
+LEFT JOIN selfridge s ON l.medusa_id = m.id;
