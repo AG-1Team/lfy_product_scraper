@@ -15,6 +15,9 @@ from sqlalchemy.orm import sessionmaker
 import os
 from .db.index import Base, MedusaProduct, FarfetchProduct, LystProduct, ItalistProduct, LeamProduct, ModesensProduct, ReversibleProduct, SelfridgeProduct
 from .utils.index import save_scraped_data
+from datetime import datetime, timezone, timedelta
+from threading import Lock
+from selenium.common.exceptions import WebDriverException, InvalidSessionIdException
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL", "postgresql://user:password@localhost:5432/mydb")
@@ -36,55 +39,132 @@ celery.conf.update(
 )
 
 WEBHOOK_URL = "https://hook.eu2.make.com/8set6v5sh27som4jqyactxvkyb7idyko"
-
-# keep a dict of drivers
-drivers = {}
-
 PRODUCTION_ENV = os.getenv("PYTHON_ENV")
+
+drivers: dict = {}
+_drivers_lock = Lock()
+
+# configure TTL
+DRIVER_TTL = timedelta(minutes=30)
+
+
+def _init_driver_for_site(website: str):
+    """Create and return a fresh driver object for a given website."""
+    if website == "farfetch":
+        drv = setup_farfetch_driver()
+    elif website == "lyst":
+        drv = LystScraper(headless=True, wait_time=15)
+    elif website == "modesens":
+        drv = ModeSensScraper(headless=True, wait_time=15)
+    elif website == "reversible":
+        drv = ReversibleScraper(headless=True, wait_time=15)
+    elif website == "leam":
+        drv = LeamScraper(headless=True, wait_time=15)
+    elif website == "selfridge":
+        drv = SelfridgesScraper(headless=True, wait_time=15)
+    elif website == "italist":
+        drv = ItalistScraper(headless=True, wait_time=15)
+    else:
+        raise ValueError(f"No driver setup defined for {website}")
+
+    return {"driver": drv, "created_at": datetime.now(timezone.utc)}
+
+
+def _safe_quit_close(driver, site_name=None):
+    """Try to quit then close; swallow exceptions but log."""
+    try:
+        # prefer quit if available
+        if hasattr(driver, "quit"):
+            try:
+                driver.quit()
+                return
+            except Exception as e:
+                print(f"[WARN] quit() failed for {site_name or ''}: {e}")
+        # fallback to close
+        if hasattr(driver, "close"):
+            try:
+                driver.close()
+                return
+            except Exception as e:
+                print(f"[WARN] close() failed for {site_name or ''}: {e}")
+    except Exception as e:
+        print(f"[WARN] error shutting down driver {site_name or ''}: {e}")
+
+
+def _is_stale(entry: dict) -> bool:
+    return (datetime.now(timezone.utc) - entry["created_at"]) > DRIVER_TTL
+
+
+def _is_healthy(driver) -> bool:
+    """Simple health check. Returns False on common session errors."""
+    try:
+        # cheap call to webdriver — execute_script is usually safe
+        driver.execute_script("return 1")
+        return True
+    except (InvalidSessionIdException, WebDriverException) as e:
+        print(f"[DEBUG] driver health check failed: {e}")
+        return False
+    except Exception as e:
+        # any other error treat as unhealthy but log
+        print(f"[DEBUG] driver health check unexpected error: {e}")
+        return False
+
+
+def rotate_drivers(force: bool = False):
+    """Rotate (recreate) any drivers older than DRIVER_TTL, or rotate all if force=True."""
+    global drivers
+    with _drivers_lock:
+        for site, entry in list(drivers.items()):
+            if entry is None:
+                continue
+            try:
+                should_rotate = force or _is_stale(
+                    entry) or not _is_healthy(entry["driver"])
+                if should_rotate:
+                    print(
+                        f"[ℹ] Rotating driver for {site} (age: {datetime.now(timezone.utc) - entry['created_at']})")
+                    _safe_quit_close(entry["driver"], site_name=site)
+                    # create new driver and replace entry
+                    drivers[site] = _init_driver_for_site(site)
+                    print(f"[✓] Recreated driver for {site}")
+            except Exception as e:
+                print(f"[ERROR] rotating driver for {site}: {e}")
 
 
 def get_driver(website: str):
-    """Return existing driver for website or initialize if not exists"""
+    """Return existing driver for website or initialize/rotate if stale/unhealthy."""
     global drivers
+    with _drivers_lock:
+        entry = drivers.get(website)
+        if entry is None:
+            print(f"[ℹ] Initializing driver for {website} (first time)...")
+            drivers[website] = _init_driver_for_site(website)
+            return drivers[website]["driver"]
 
-    if website not in drivers or drivers[website] is None:
-        print(f"[ℹ] Initializing driver for {website}...")
-        if website == "farfetch":
-            # farfetch specific setup
-            drivers[website] = setup_farfetch_driver()
-        elif website == "lyst":
-            drivers[website] = LystScraper(headless=True, wait_time=15)
-        elif website == "modesens":
-            drivers[website] = ModeSensScraper(headless=True, wait_time=15)
-        elif website == "reversible":
-            drivers[website] = ReversibleScraper(headless=True, wait_time=15)
-        elif website == "leam":
-            drivers[website] = LeamScraper(headless=True, wait_time=15)
-        elif website == "selfridge":
-            drivers[website] = SelfridgesScraper(headless=True, wait_time=15)
-        elif website == "italist":
-            drivers[website] = ItalistScraper(headless=True, wait_time=15)
-        else:
-            raise ValueError(f"No driver setup defined for {website}")
+        # rotate if TTL passed or unhealthy
+        if _is_stale(entry) or not _is_healthy(entry["driver"]):
+            print(
+                f"[ℹ] Driver for {website} is stale/unhealthy -> rotating now...")
+            _safe_quit_close(entry["driver"], site_name=website)
+            drivers[website] = _init_driver_for_site(website)
 
-    return drivers[website]
+        return drivers[website]["driver"]
 
-
+# wire shutdown to Celery signal as you already do
 @signals.worker_process_shutdown.connect
 def shutdown_all_drivers(**kwargs):
     global drivers
     print("[ℹ] Shutting down all drivers...")
-    for site, drv in drivers.items():
-        try:
-            if site == "farfetch":
-                drv.quit()
+    with _drivers_lock:
+        for site, entry in list(drivers.items()):
+            if not entry:
+                continue
+            try:
+                _safe_quit_close(entry["driver"], site_name=site)
+                drivers[site] = None
                 print(f"✓ Closed {site} driver")
-            else:
-                drv.close()
-                print(f"✓ Closed {site} driver")
-        except Exception as e:
-            print(f"⚠ Failed closing {site} driver: {e}")
-
+            except Exception as e:
+                print(f"⚠ Failed closing {site} driver: {e}")
 
 @shared_task(name="scrap_product_url")
 def scrape_product_and_notify(url, medusa_product_data, website):
@@ -132,6 +212,11 @@ def scrape_product_and_notify(url, medusa_product_data, website):
             print(f"[⏩] Skipping {url} (already scraped)")
             return
 
+    # rotate stale drivers before processing (this is cheap and safe)
+    try:
+        rotate_drivers()
+    except Exception as e:
+        print(f"[WARN] rotate_drivers error at task start: {e}")
 
     driver = get_driver(website)
 
