@@ -178,11 +178,18 @@ def get_driver(website: str):
     print(f"[ℹ] Initializing driver for {website} in worker process...")
     driver = _init_driver_for_site(website)
     try:
-        _ = driver.current_url  # ping
+        if type(driver) != WebDriver:
+            # Ping the driver to ensure it's valid
+            _ = driver.driver.current_url  # ping
+        else:
+            _ = driver.current_url  # ping
         return driver
     except (InvalidSessionIdException, WebDriverException):
         try:
-            driver.quit()
+            if type(driver) == WebDriver:
+                driver.quit()
+            else:
+                driver.close()
         except:
             pass
         return get_driver(website)
@@ -260,17 +267,17 @@ def scrape_product_and_notify(self, url, medusa_product_data, website):
             data = {}
             if website == "farfetch":
                 data["farfetch"] = farfetch_retrieve_products(driver, url)
-            elif website == "lyst":
+            elif website == "lyst" and not isinstance(driver, WebDriver):
                 data["lyst"] = driver.scrape_product(url)
-            elif website == "modesens":
+            elif website == "modesens" and not isinstance(driver, WebDriver):
                 data["modesens"] = driver.scrape_product(url)
-            elif website == "reversible":
+            elif website == "reversible" and not isinstance(driver, WebDriver):
                 data["reversible"] = driver.scrape_product(url)
-            elif website == "italist":
+            elif website == "italist" and not isinstance(driver, WebDriver):
                 data["italist"] = driver.scrape_product(url)
-            elif website == "selfridge":
+            elif website == "selfridge" and not isinstance(driver, WebDriver):
                 data["selfridge"] = driver.scrape_product(url)
-            elif website == "leam":
+            elif website == "leam" and not isinstance(driver, WebDriver):
                 data["leam"] = driver.scrape_product(url)
             else:
                 raise ValueError(f"Website {website} is not supported")
