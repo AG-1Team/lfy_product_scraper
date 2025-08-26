@@ -35,7 +35,7 @@ def create_engine_for_worker():
     """Create a new SQLAlchemy engine specifically for a worker process."""
     print("Creating a new SQLAlchemy engine for worker process")
     engine = create_engine(
-        "postgresql://user:password@localhost/mydb",
+        DATABASE_URL,
         pool_pre_ping=True,
         pool_size=10,
         max_overflow=20,
