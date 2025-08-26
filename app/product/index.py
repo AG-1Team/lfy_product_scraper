@@ -182,7 +182,7 @@ def extract_size_and_fit(soup, driver=None):
                             print(f"[DEBUG] Successfully clicked size selector: {selector}")
                             break
                     except Exception as e:
-                        print(f"[DEBUG] Failed to click selector {selector}: {e}")
+                        # print(f"[DEBUG] Failed to click selector {selector}: {e}")
                         continue
 
                 if clicked:

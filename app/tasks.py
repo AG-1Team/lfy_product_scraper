@@ -80,12 +80,11 @@ def get_session():
 celery = Celery("tasks")
 
 celery.conf.update(
-    worker_pool='prefork',  # This prevents multiprocessing issues with Chrome
-    worker_concurrency=12,
+    worker_pool='threads',   # use threads instead of prefork (multiprocessing)
+    worker_concurrency=8,   # number of threads
     worker_prefetch_multiplier=2,
     task_acks_late=True,
-    # Restart worker after each task to prevent memory leaks
-    worker_max_tasks_per_child=5,
+    worker_max_tasks_per_child=5,  # optional, not as useful with threads
     task_default_retry_delay=60,
     task_max_retries=3,
 )
@@ -127,6 +126,7 @@ DRIVER_TTL = timedelta(minutes=10)
 #                 f"[DEBUG] Using existing healthy driver for {website} (age: {age})")
 
 #         return drivers[website]["driver"]
+
 
 def _init_driver_for_site(website: str):
     """Create and return a fresh driver object for a given website."""
