@@ -23,10 +23,9 @@ process_local = local()
 DATABASE_URL = os.getenv(
     "DATABASE_URL", "postgresql://user:password@localhost:5432/mydb")
 
-engine = create_engine(DATABASE_URL)
-Base.metadata.create_all(engine, pool_pre_ping=True,
-                         pool_size=10,
-                         max_overflow=20)
+engine = create_engine(DATABASE_URL, pool_size=10,
+                       max_overflow=20, pool_pre_ping=True)
+Base.metadata.create_all(engine)
 default_Session = sessionmaker(bind=engine, expire_on_commit=False)
 # Session = sessionmaker(bind=engine)
 # session = Session()
