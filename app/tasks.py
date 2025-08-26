@@ -14,9 +14,10 @@ import os
 from .db.index import Base, MedusaProduct, FarfetchProduct, LystProduct, ItalistProduct, LeamProduct, ModesensProduct, ReversibleProduct, SelfridgeProduct
 from .utils.index import save_scraped_data, extract_text
 from datetime import datetime, timezone, timedelta
-from threading import Lock
+from threading import Lock, local
 from selenium.common.exceptions import WebDriverException, InvalidSessionIdException
-from threading import local
+from contextlib import contextmanager
+from selenium.webdriver.remote.webdriver import WebDriver
 
 process_local = local()
 
@@ -98,6 +99,34 @@ _drivers_lock = Lock()
 # configure TTL
 DRIVER_TTL = timedelta(minutes=10)
 
+# def get_driver(website: str):
+#     """Return existing driver for website or initialize/rotate if stale/unhealthy."""
+#     global drivers
+#     with _drivers_lock:
+#         entry = drivers.get(website)
+
+#         if entry is None:
+#             print(f"[ℹ] Initializing driver for {website} (first time)...")
+#             drivers[website] = _init_driver_for_site(website)
+#             return drivers[website]["driver"]
+
+#         # Check if rotation is needed
+#         is_stale = _is_stale(entry)
+#         is_healthy = _is_healthy(entry["driver"])
+
+#         if is_stale or not is_healthy:
+#             age = datetime.now(timezone.utc) - entry['created_at']
+#             reason = "stale" if is_stale else "unhealthy"
+#             print(
+#                 f"[ℹ] Driver for {website} is {reason} (age: {age}) -> rotating now...")
+#             _safe_quit_close(entry["driver"], site_name=website)
+#             drivers[website] = _init_driver_for_site(website)
+#         else:
+#             age = datetime.now(timezone.utc) - entry['created_at']
+#             print(
+#                 f"[DEBUG] Using existing healthy driver for {website} (age: {age})")
+
+#         return drivers[website]["driver"]
 
 def _init_driver_for_site(website: str):
     """Create and return a fresh driver object for a given website."""
@@ -118,7 +147,8 @@ def _init_driver_for_site(website: str):
     else:
         raise ValueError(f"No driver setup defined for {website}")
 
-    return {"driver": drv, "created_at": datetime.now(timezone.utc)}
+    # return {"driver": drv, "created_at": datetime.now(timezone.utc)}
+    return drv
 
 
 def _safe_quit_close(driver, site_name=None):
@@ -219,33 +249,24 @@ def rotate_drivers(force: bool = False):
 
 
 def get_driver(website: str):
-    """Return existing driver for website or initialize/rotate if stale/unhealthy."""
-    global drivers
-    with _drivers_lock:
-        entry = drivers.get(website)
+    """Always create a fresh driver for this worker task"""
+    print(f"[ℹ] Initializing driver for {website} in worker process...")
+    return _init_driver_for_site(website)
 
-        if entry is None:
-            print(f"[ℹ] Initializing driver for {website} (first time)...")
-            drivers[website] = _init_driver_for_site(website)
-            return drivers[website]["driver"]
 
-        # Check if rotation is needed
-        is_stale = _is_stale(entry)
-        is_healthy = _is_healthy(entry["driver"])
-
-        if is_stale or not is_healthy:
-            age = datetime.now(timezone.utc) - entry['created_at']
-            reason = "stale" if is_stale else "unhealthy"
-            print(
-                f"[ℹ] Driver for {website} is {reason} (age: {age}) -> rotating now...")
-            _safe_quit_close(entry["driver"], site_name=website)
-            drivers[website] = _init_driver_for_site(website)
-        else:
-            age = datetime.now(timezone.utc) - entry['created_at']
-            print(
-                f"[DEBUG] Using existing healthy driver for {website} (age: {age})")
-
-        return drivers[website]["driver"]
+@contextmanager
+def driver_for(website: str):
+    driver = _init_driver_for_site(website)
+    try:
+        yield driver
+    finally:
+        try:
+            if type(driver) == WebDriver:
+                driver.quit()
+            else:
+                driver.close()
+        except Exception:
+            pass
 
 
 @signals.worker_process_init.connect
@@ -327,25 +348,25 @@ def scrape_product_and_notify(url, medusa_product_data, website):
     # 🔄 REMOVED: rotate_drivers() call that was causing premature rotation
     # Now get_driver() will handle rotation only when needed (TTL exceeded or unhealthy)
 
-    driver = get_driver(website)
-
     data = {}
-    if website == "farfetch":
-        data["farfetch"] = farfetch_retrieve_products(driver, url)
-    elif website == "lyst":
-        data["lyst"] = driver.scrape_product(url)
-    elif website == "modesens":
-        data["modesens"] = driver.scrape_product(url)
-    elif website == "reversible":
-        data["reversible"] = driver.scrape_product(url)
-    elif website == "italist":
-        data["italist"] = driver.scrape_product(url)
-    elif website == "selfridge":
-        data["selfridge"] = driver.scrape_product(url)
-    elif website == "leam":
-        data["leam"] = driver.scrape_product(url)
-    else:
-        raise ValueError(f"Website {website} is not supported")
+
+    with driver_for(website) as driver:
+        if website == "farfetch":
+            data["farfetch"] = farfetch_retrieve_products(driver, url)
+        elif website == "lyst":
+            data["lyst"] = driver.scrape_product(url)
+        elif website == "modesens":
+            data["modesens"] = driver.scrape_product(url)
+        elif website == "reversible":
+            data["reversible"] = driver.scrape_product(url)
+        elif website == "italist":
+            data["italist"] = driver.scrape_product(url)
+        elif website == "selfridge":
+            data["selfridge"] = driver.scrape_product(url)
+        elif website == "leam":
+            data["leam"] = driver.scrape_product(url)
+        else:
+            raise ValueError(f"Website {website} is not supported")
 
     # ❌ If scraper failed → don't insert anything
     if data[website] is None:
