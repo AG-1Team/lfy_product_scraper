@@ -12,144 +12,51 @@ from selenium_stealth import stealth
 def setup_farfetch_driver():
     """Setup stealth-enabled Chrome driver optimized for server environments"""
     try:
-        # Rotate user agent
+        # Rotate UA
         ua = UserAgent()
         user_agent = ua.random
         print(f"[*] Using User-Agent: {user_agent}")
 
-        # Chrome options with server-specific configurations
         options = Options()
         options.add_argument(f"user-agent={user_agent}")
         options.add_argument("--headless=new")
-
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
-
         options.add_argument("--disable-web-security")
         options.add_argument("--disable-blink-features=AutomationControlled")
         options.add_argument("--disable-gpu")
         options.add_argument("--allow-running-insecure-content")
-
         options.add_argument("--disable-extensions")
         options.add_argument("--disable-plugins-discovery")
-        options.add_argument("--disable-web-security")
-
-        # Window size (important even in headless mode)
         options.add_argument("--window-size=1920,1080")
 
-        # ext_path = create_proxy_extension()
-        # options.add_extension(ext_path)
-
-        # CHROME SPECIFIC: Set binary location
+        # Locate Chrome binary
         chrome_paths = [
+            '/opt/chrome/chrome',
             '/usr/bin/google-chrome',
             '/usr/bin/google-chrome-stable',
-            '/opt/chrome/chrome',          # custom install path
-            '/usr/local/bin/google-chrome'  # symlink from Dockerfile
+            '/usr/local/bin/google-chrome'
         ]
-
-        chrome_binary = None
         for path in chrome_paths:
             if os.path.exists(path):
-                chrome_binary = path
+                options.binary_location = path
                 print(f"[*] Found Chrome binary at: {path}")
                 break
 
-        if chrome_binary:
-            options.binary_location = chrome_binary
-        else:
-            print("[Warning] No Chrome binary found, trying default...")
+        # ✅ Force system chromedriver (no UC downloader!)
+        driver_path = "/usr/local/bin/chromedriver"
+        if not os.path.exists(driver_path):
+            raise FileNotFoundError(f"ChromeDriver not found at {driver_path}")
 
-        # Additional prefs for better performance
-        prefs = {
-            "profile.default_content_setting_values": {
-                "notifications": 2,
-                "media_stream": 2,
-            },
-            "profile.managed_default_content_settings": {
-                "images": 2  # Block images to load faster (optional)
-            }
-        }
-        options.add_experimental_option("prefs", prefs)
+        service = Service(driver_path)
+        driver = webdriver.Chrome(service=service, options=options)
+        print("[*] Using system chromedriver")
 
-        # Find ChromeDriver (system package only)
-        chrome_driver_paths = [
-            '/usr/bin/chromedriver',           # System chromedriver
-            '/opt/chromedriver',               # Custom install
-            '/usr/local/bin/chromedriver'      # Manual install
-        ]
+        # Basic timeouts
+        driver.set_page_load_timeout(60)
+        driver.implicitly_wait(15)
 
-        driver_path = None
-        for path in chrome_driver_paths:
-            if os.path.exists(path):
-                # Check if it's executable
-                if os.access(path, os.X_OK):
-                    driver_path = path
-                    print(f"[*] Found ChromeDriver at: {path}")
-                    break
-                else:
-                    print(
-                        f"[Warning] Found ChromeDriver at {path} but it's not executable")
-
-        if not driver_path:
-            print("[Error] No ChromeDriver found at standard locations")
-            print("[*] Trying to find chromedriver in PATH...")
-            try:
-                result = subprocess.run(['which', 'chromedriver'],
-                                        capture_output=True, text=True, timeout=5)
-                if result.returncode == 0 and result.stdout.strip():
-                    driver_path = result.stdout.strip()
-                    print(f"[*] Found ChromeDriver in PATH: {driver_path}")
-            except Exception as e:
-                print(f"[Warning] PATH search failed: {e}")
-
-        if not driver_path:
-            print("[Error] ChromeDriver not found anywhere")
-            print("[*] Installation commands:")
-            print("    sudo apt-get update")
-            print("    sudo apt-get install chrome chrome-driver")
-            print("    # or")
-            print("    sudo apt-get install google-chrome-stable")
-            return None
-
-        # Test if ChromeDriver is working
-        try:
-            result = subprocess.run([driver_path, '--version'],
-                                    capture_output=True, text=True, timeout=10)
-            if result.returncode == 0:
-                print(f"[*] ChromeDriver version: {result.stdout.strip()}")
-            else:
-                print(f"[Warning] ChromeDriver test failed: {result.stderr}")
-        except Exception as e:
-            print(f"[Warning] Could not test ChromeDriver: {e}")
-
-        # Initialize the driver with enhanced error handling
-        try:
-            service = Service(driver_path)
-            # Add service arguments for better Docker compatibility
-            service.service_args.extend([
-                '--verbose',
-                '--log-path=/tmp/chromedriver.log',
-                '--whitelisted-ips=',
-                '--allowed-origins=*'
-            ])
-
-            driver = webdriver.Chrome(service=service, options=options)
-            print("[*] Using system chromedriver")
-        except Exception as e:
-            print(f"[Error] Failed to initialize driver: {e}")
-            print("[*] Troubleshooting:")
-            print(f"    - ChromeDriver path: {driver_path}")
-            print(f"    - Chrome binary: {chrome_binary}")
-            print("    - Check permissions: ls -la", driver_path)
-            print("    - Check chromedriver log: cat /tmp/chromedriver.log")
-            return None
-
-        # ENHANCED: More aggressive timeout settings for server environments
-        driver.set_page_load_timeout(60)  # Increased timeout for slow servers
-        driver.implicitly_wait(15)  # Increased implicit wait
-
-        # Additional anti-detection measures
+        # Anti-detection tweaks
         driver.execute_script(
             "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
         driver.execute_script(
@@ -157,46 +64,36 @@ def setup_farfetch_driver():
         driver.execute_script(
             "Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']})")
 
-        # Use selenium-stealth for additional protection
-        stealth(driver,
-                languages=["en-US", "en"],
-                vendor="Google Inc.",
-                platform="Linux x86_64",  # Server-appropriate platform
-                webgl_vendor="Intel Inc.",
-                renderer="Intel Iris OpenGL Engine",
-                fix_hairline=True,
-                )
+        stealth(
+            driver,
+            languages=["en-US", "en"],
+            vendor="Google Inc.",
+            platform="Linux x86_64",
+            webgl_vendor="Intel Inc.",
+            renderer="Intel Iris OpenGL Engine",
+            fix_hairline=True,
+        )
 
-        # Test if driver works with retry mechanism
-        max_test_retries = 3
-        for attempt in range(max_test_retries):
+        # Test driver
+        for attempt in range(3):
             try:
                 driver.get("https://httpbin.org/user-agent")
                 print(
-                    f"[✓] Driver initialized successfully (attempt {attempt + 1})")
+                    f"[✓] Driver initialized successfully (attempt {attempt+1})")
                 break
             except Exception as e:
-                print(f"[Warning] Test failed on attempt {attempt + 1}: {e}")
-                if attempt < max_test_retries - 1:
+                print(f"[Warning] Test failed on attempt {attempt+1}: {e}")
+                if attempt < 2:
                     time.sleep(5)
                 else:
-                    print("[Error] Driver test failed after all attempts")
                     driver.quit()
-                    return None
+                    raise RuntimeError("Farfetch driver init failed")
 
         return driver
 
     except Exception as e:
-        print(f"[Error] Failed to setup driver: {e}")
-        print("[*] Chrome setup checklist:")
-        print("    1. Install: sudo apt-get install chrome chrome-driver")
-        print("    2. Test browser: chrome --version")
-        print("    3. Test driver: chromedriver --version")
-        print("    4. Check permissions: ls -la /usr/bin/chromedriver")
-        print("    5. Check shared memory: df -h /dev/shm")
+        print(f"[Error] Failed to setup Farfetch driver: {e}")
         return None
-
-
 def detect_browser():
     """Detect which browser is available on the system"""
     browsers = {

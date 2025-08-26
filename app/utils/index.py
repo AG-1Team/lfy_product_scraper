@@ -8,6 +8,7 @@ import zipfile
 import re
 import time
 import json
+from selenium.webdriver.chrome.service import Service
 
 
 def switch_website(url):
@@ -31,8 +32,8 @@ def setup_scraping_driver(website, headless=True, proxy_enabled=True):
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.6367.60 Safari/537.36",
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:125.0) Gecko/20100101 Firefox/125.0"
     ]
-
-    options.add_argument(f"--user-agent={random.choice(user_agents)}")
+    user_agent = random.choice(user_agents)
+    options.add_argument(f"--user-agent={user_agent}")
 
     # Headless mode
     if headless:
@@ -46,31 +47,29 @@ def setup_scraping_driver(website, headless=True, proxy_enabled=True):
     options.add_argument("--disable-plugins-discovery")
     options.add_argument("--allow-running-insecure-content")
 
-    if website == "modesens" or website == "italist":
+    # Proxy for specific sites
+    if website in {"modesens", "italist"} and proxy_enabled:
         options.add_argument('--proxy-server=pr.oxylabs.io:7777')
 
-    # Set Chrome binary location if needed
-    # options.binary_location = "/usr/local/bin/google-chrome"
+    # ✅ Force UC to use the system chromedriver (preinstalled in your Docker image)
+    service = Service("/usr/local/bin/chromedriver")
 
-    # try:
     driver = uc.Chrome(
         headless=headless,
         options=options,
+        service=service,
         use_subprocess=False,
-        version_main=130
+        driver_executable_path="/usr/local/bin/chromedriver",
+        version_main=130  # match your Chrome build
     )
 
-    # Additional stealth measures
-    # driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-    driver.execute_cdp_cmd('Network.setUserAgentOverride', {
-        "userAgent": random.choice(user_agents)
-    })
+    # Apply random UA again with CDP
+    driver.execute_cdp_cmd("Network.setUserAgentOverride", {
+                           "userAgent": user_agent})
 
     proxy_ip = check_proxy_working(driver)
-
     if proxy_ip:
         print(f"\n✅ Proxy is working! Current IP: {proxy_ip}")
-
     else:
         print("\n❌ Proxy might not be working correctly")
 
