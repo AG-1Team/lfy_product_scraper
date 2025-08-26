@@ -177,22 +177,7 @@ def get_driver(website: str):
     """Always create a fresh driver for this worker task"""
     print(f"[ℹ] Initializing driver for {website} in worker process...")
     driver = _init_driver_for_site(website)
-    try:
-        if type(driver) != WebDriver:
-            # Ping the driver to ensure it's valid
-            _ = driver.driver.current_url  # ping
-        else:
-            _ = driver.current_url  # ping
-        return driver
-    except (InvalidSessionIdException, WebDriverException):
-        try:
-            if type(driver) == WebDriver:
-                driver.quit()
-            else:
-                driver.close()
-        except:
-            pass
-        return get_driver(website)
+    return driver
 
 @signals.worker_process_init.connect
 def init_worker_process(*args, **kwargs):
