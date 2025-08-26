@@ -413,6 +413,8 @@ def scrape_product_and_notify(url, medusa_product_data, website):
     except Exception as e:
         print(f"[⚠] Failed to add medusa product: {e}")
 
+    session.close()
+
     if type(driver) == WebDriver:
         driver.quit()
     else:
