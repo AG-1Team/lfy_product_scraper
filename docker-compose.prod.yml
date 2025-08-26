@@ -48,7 +48,7 @@ services:
       - redis
       - postgres
     command: >
-      sh -c "celery -A app.tasks worker --loglevel=info --concurrency=1 --pool=solo --without-heartbeat --without-mingle"
+      sh -c "celery -A app.tasks worker --loglevel=info --without-heartbeat --without-mingle"
     restart: unless-stopped
 
   redis:
