@@ -27,7 +27,8 @@ class ItalistScraper:
         self.data_list = []
 
         # Initialize undetected Chrome
-        self.driver = setup_scraping_driver(headless=headless)
+        self.driver = setup_scraping_driver(
+            headless=headless, website="italist")
 
         self.wait = WebDriverWait(self.driver, wait_time)
 

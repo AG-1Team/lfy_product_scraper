@@ -21,7 +21,8 @@ class ReversibleScraper:
         self.data_list = []
 
         # Initialize undetected Chrome
-        self.driver = setup_scraping_driver(headless=headless)
+        self.driver = setup_scraping_driver(
+            headless=headless, website="reversible")
 
         self.wait = WebDriverWait(self.driver, wait_time)
 

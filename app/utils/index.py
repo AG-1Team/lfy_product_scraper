@@ -18,72 +18,7 @@ def switch_website(url):
     return url.split("//")[1].split("/")[0]
 
 
-def create_proxy_extension(
-    proxy_host="pr.oxylabs.io",
-    proxy_port="7777",
-    proxy_user="umar_lfy_Boeun",
-    proxy_pass="umar_LFY1234",
-    ext_path="oxylabs_proxy_auth.zip"
-):
-    manifest_json = """
-    {
-        "version": "1.0.0",
-        "manifest_version": 2,
-        "name": "Oxylabs Proxy",
-        "permissions": [
-            "proxy",
-            "storage",
-            "webRequest",
-            "webRequestAuthProvider",
-            "webRequestBlocking"
-        ],
-        "background": {
-            "service_worker": "background.js"
-        },
-        "host_permissions": [
-            "<all_urls>"
-        ]
-    }
-    """
-
-    background_js = f"""
-    chrome.runtime.onInstalled.addListener(() => {{
-        var config = {{
-            mode: "fixed_servers",
-            rules: {{
-                singleProxy: {{
-                    scheme: "http",
-                    host: "{proxy_host}",
-                    port: parseInt({proxy_port})
-                }},
-                bypassList: ["localhost"]
-            }}
-        }};
-        chrome.proxy.settings.set({{value: config, scope: "regular"}}, function() {{}});
-    }});
-
-    chrome.webRequest.onAuthRequired.addListener(
-        function(details) {{
-            return {{
-                authCredentials: {{
-                    username: "{proxy_user}",
-                    password: "{proxy_pass}"
-                }}
-            }};
-        }},
-        {{urls: ["<all_urls>"]}},
-        ["blocking"]
-    );
-    """
-
-    with zipfile.ZipFile(ext_path, "w") as zp:
-        zp.writestr("manifest.json", manifest_json)
-        zp.writestr("background.js", background_js)
-
-    return ext_path
-
-
-def setup_scraping_driver(headless=True, proxy_enabled=True):
+def setup_scraping_driver(website, headless=True, proxy_enabled=True):
     options = uc.ChromeOptions()
 
     # User agent rotation
@@ -111,8 +46,8 @@ def setup_scraping_driver(headless=True, proxy_enabled=True):
     options.add_argument("--disable-plugins-discovery")
     options.add_argument("--allow-running-insecure-content")
 
-    # if proxy_enabled:
-    # options.add_argument('--proxy-server=pr.oxylabs.io:7777')
+    if website == "modesens" or website == "italist":
+        options.add_argument('--proxy-server=pr.oxylabs.io:7777')
 
     # Set Chrome binary location if needed
     # options.binary_location = "/usr/local/bin/google-chrome"

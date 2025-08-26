@@ -21,7 +21,8 @@ class ModeSensScraper:
         self.data_list = []
 
         # Initialize undetected Chrome
-        self.driver = setup_scraping_driver(headless=headless)
+        self.driver = setup_scraping_driver(
+            headless=headless, website="modesens")
 
         # Execute script to remove webdriver property
         self.driver.execute_script(

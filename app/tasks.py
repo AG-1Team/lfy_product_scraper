@@ -43,7 +43,7 @@ drivers: dict = {}
 _drivers_lock = Lock()
 
 # configure TTL
-DRIVER_TTL = timedelta(minutes=30)
+DRIVER_TTL = timedelta(minutes=10)
 
 
 def _init_driver_for_site(website: str):
@@ -214,6 +214,7 @@ def shutdown_all_drivers(**kwargs):
 
 @shared_task(name="scrap_product_url")
 def scrape_product_and_notify(url, medusa_product_data, website):
+    print(f"[☑️] Starting scrape task for website f{website} and URL {url}")
     # 🚨 Check if already processed
     if website == "farfetch":
         existing = session.query(FarfetchProduct).filter_by(
