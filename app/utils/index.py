@@ -52,33 +52,33 @@ def setup_scraping_driver(website, headless=True, proxy_enabled=True):
     # Set Chrome binary location if needed
     # options.binary_location = "/usr/local/bin/google-chrome"
 
-    try:
-        driver = uc.Chrome(
-            headless=headless,
-            options=options,
-            use_subprocess=False,
-            version_main=130
-        )
+    # try:
+    driver = uc.Chrome(
+        headless=headless,
+        options=options,
+        use_subprocess=False,
+        version_main=130
+    )
 
-        # Additional stealth measures
-        # driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-        driver.execute_cdp_cmd('Network.setUserAgentOverride', {
-            "userAgent": random.choice(user_agents)
-        })
+    # Additional stealth measures
+    # driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+    driver.execute_cdp_cmd('Network.setUserAgentOverride', {
+        "userAgent": random.choice(user_agents)
+    })
 
-        proxy_ip = check_proxy_working(driver)
+    proxy_ip = check_proxy_working(driver)
 
-        if proxy_ip:
-            print(f"\n✅ Proxy is working! Current IP: {proxy_ip}")
+    if proxy_ip:
+        print(f"\n✅ Proxy is working! Current IP: {proxy_ip}")
 
-        else:
-            print("\n❌ Proxy might not be working correctly")
+    else:
+        print("\n❌ Proxy might not be working correctly")
 
-        return driver
+    return driver
 
-    except Exception as e:
-        print(f"Error initializing driver: {e}")
-        return None
+    # except Exception as e:
+    #     print(f"Error initializing driver: {e}")
+    #     return None
 
 
 def check_proxy_working(driver):

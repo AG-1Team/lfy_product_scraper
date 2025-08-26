@@ -278,7 +278,7 @@ def shutdown_all_drivers(**kwargs):
 
 @shared_task(name="scrap_product_url")
 def scrape_product_and_notify(url, medusa_product_data, website):
-    print(f"[☑️] Starting scrape task for website f{website} and URL {url}")
+    print(f"[☑️] Starting scrape task for website {website} and URL {url}")
     session = get_session()
     # 🚨 Check if already processed
     if website == "farfetch":

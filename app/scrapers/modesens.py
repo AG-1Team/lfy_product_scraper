@@ -25,8 +25,8 @@ class ModeSensScraper:
             headless=headless, website="modesens")
 
         # Execute script to remove webdriver property
-        self.driver.execute_script(
-            "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        # self.driver.execute_script(
+        #     "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
 
         self.wait = WebDriverWait(self.driver, wait_time)
 
