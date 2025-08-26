@@ -254,21 +254,6 @@ def get_driver(website: str):
     return _init_driver_for_site(website)
 
 
-@contextmanager
-def driver_for(website: str):
-    driver = _init_driver_for_site(website)
-    try:
-        yield driver
-    finally:
-        try:
-            if type(driver) == WebDriver:
-                driver.quit()
-            else:
-                driver.close()
-        except Exception:
-            pass
-
-
 @signals.worker_process_init.connect
 def init_worker_process(*args, **kwargs):
     """
@@ -350,23 +335,24 @@ def scrape_product_and_notify(url, medusa_product_data, website):
 
     data = {}
 
-    with driver_for(website) as driver:
-        if website == "farfetch":
-            data["farfetch"] = farfetch_retrieve_products(driver, url)
-        elif website == "lyst":
-            data["lyst"] = driver.scrape_product(url)
-        elif website == "modesens":
-            data["modesens"] = driver.scrape_product(url)
-        elif website == "reversible":
-            data["reversible"] = driver.scrape_product(url)
-        elif website == "italist":
-            data["italist"] = driver.scrape_product(url)
-        elif website == "selfridge":
-            data["selfridge"] = driver.scrape_product(url)
-        elif website == "leam":
-            data["leam"] = driver.scrape_product(url)
-        else:
-            raise ValueError(f"Website {website} is not supported")
+    # with driver_for(website) as driver:
+    driver = get_driver(website)
+    if website == "farfetch":
+        data["farfetch"] = farfetch_retrieve_products(driver, url)
+    elif website == "lyst":
+        data["lyst"] = driver.scrape_product(url)
+    elif website == "modesens":
+        data["modesens"] = driver.scrape_product(url)
+    elif website == "reversible":
+        data["reversible"] = driver.scrape_product(url)
+    elif website == "italist":
+        data["italist"] = driver.scrape_product(url)
+    elif website == "selfridge":
+        data["selfridge"] = driver.scrape_product(url)
+    elif website == "leam":
+        data["leam"] = driver.scrape_product(url)
+    else:
+        raise ValueError(f"Website {website} is not supported")
 
     # ❌ If scraper failed → don't insert anything
     if data[website] is None:
@@ -426,3 +412,8 @@ def scrape_product_and_notify(url, medusa_product_data, website):
 
     except Exception as e:
         print(f"[⚠] Failed to add medusa product: {e}")
+
+    if type(driver) == WebDriver:
+        driver.quit()
+    else:
+        driver.close()
