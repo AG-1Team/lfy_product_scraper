@@ -16,24 +16,78 @@ from .utils.index import save_scraped_data, extract_text
 from datetime import datetime, timezone, timedelta
 from threading import Lock
 from selenium.common.exceptions import WebDriverException, InvalidSessionIdException
+from threading import local
+
+process_local = local()
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL", "postgresql://user:password@localhost:5432/mydb")
 
 engine = create_engine(DATABASE_URL)
-Base.metadata.create_all(engine)
-Session = sessionmaker(bind=engine)
-session = Session()
+Base.metadata.create_all(engine, pool_pre_ping=True,
+                         pool_size=10,
+                         max_overflow=20)
+default_Session = sessionmaker(bind=engine, expire_on_commit=False)
+# Session = sessionmaker(bind=engine)
+# session = Session()
+
+
+def create_engine_for_worker():
+    """Create a new SQLAlchemy engine specifically for a worker process."""
+    print("Creating a new SQLAlchemy engine for worker process")
+    engine = create_engine(
+        "postgresql://user:password@localhost/mydb",
+        pool_pre_ping=True,
+        pool_size=10,
+        max_overflow=20,
+    )
+    process_local.engine = engine
+    process_local.Session = sessionmaker(bind=engine, expire_on_commit=False)
+    return engine
+
+
+def dispose_engine():
+    """Dispose of the process-local engine if it exists."""
+    if hasattr(process_local, 'engine'):
+        print("Disposing SQLAlchemy engine for worker process")
+        process_local.engine.dispose()
+        del process_local.engine
+        del process_local.Session
+
+
+def get_engine():
+    """Get the appropriate SQLAlchemy engine for the current process."""
+    # Check if we have a process-local engine
+    if hasattr(process_local, 'engine'):
+        return process_local.engine
+    # Otherwise, return the default engine
+    return engine
+
+
+def get_session():
+    """
+    Get a new SQLAlchemy session from the appropriate Session factory.
+    
+    This works with both the main application (using the default engine)
+    and Celery workers (using their process-local engines).
+    """
+    # Check if we have a process-local Session factory
+    if hasattr(process_local, 'Session'):
+        return process_local.Session()
+    # Otherwise, use the default Session factory
+    return default_Session()
 
 celery = Celery("tasks")
 
 celery.conf.update(
-    worker_pool='solo',  # This prevents multiprocessing issues with Chrome
-    worker_concurrency=1,
-    worker_prefetch_multiplier=1,
+    worker_pool='prefork',  # This prevents multiprocessing issues with Chrome
+    worker_concurrency=12,
+    worker_prefetch_multiplier=2,
     task_acks_late=True,
     # Restart worker after each task to prevent memory leaks
-    worker_max_tasks_per_child=1,
+    worker_max_tasks_per_child=5,
+    task_default_retry_delay=60,
+    task_max_retries=3,
 )
 
 WEBHOOK_URL = "https://hook.eu2.make.com/8set6v5sh27som4jqyactxvkyb7idyko"
@@ -195,6 +249,16 @@ def get_driver(website: str):
         return drivers[website]["driver"]
 
 
+@signals.worker_process_init.connect
+def init_worker_process(*args, **kwargs):
+    """
+    Initialize resources for a worker process.
+    
+    This signal handler runs in each forked child process,
+    creating a separate SQLAlchemy engine for each worker.
+    """
+    create_engine_for_worker()
+
 # wire shutdown to Celery signal as you already do
 @signals.worker_process_shutdown.connect
 def shutdown_all_drivers(**kwargs):
@@ -210,11 +274,13 @@ def shutdown_all_drivers(**kwargs):
                 print(f"✓ Closed {site} driver")
             except Exception as e:
                 print(f"⚠ Failed closing {site} driver: {e}")
+    dispose_engine()
 
 
 @shared_task(name="scrap_product_url")
 def scrape_product_and_notify(url, medusa_product_data, website):
     print(f"[☑️] Starting scrape task for website f{website} and URL {url}")
+    session = get_session()
     # 🚨 Check if already processed
     if website == "farfetch":
         existing = session.query(FarfetchProduct).filter_by(

@@ -49,7 +49,7 @@ services:
       - postgres
     command: >
       sh -c "watchmedo auto-restart --directory=/app --patterns='*.py' --recursive --signal SIGTERM 
-      -- celery -A app.tasks worker --loglevel=info --concurrency=1 --pool=solo --without-heartbeat --without-mingle"
+      -- celery -A app.tasks worker --loglevel=info --without-heartbeat --without-mingle"
     restart: unless-stopped
 
   redis:
