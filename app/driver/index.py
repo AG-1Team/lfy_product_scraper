@@ -7,7 +7,6 @@ from selenium.webdriver.chrome.options import Options
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium_stealth import stealth
-from ..utils.index import create_proxy_extension
 
 
 def setup_farfetch_driver():

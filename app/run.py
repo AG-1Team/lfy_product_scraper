@@ -219,12 +219,16 @@ def sync_to_airtable():
         if not medusa_id and not sync_all:
             return jsonify({"error": "Either 'medusa_id' or 'sync_all: true' is required"}), 400
 
+        medusa_products = None
+
         # Get products to sync
         if medusa_id:
             medusa_products = session.query(
                 MedusaProduct).filter_by(id=medusa_id).all()
         else:
             medusa_products = session.query(MedusaProduct).all()
+
+        print("Total Medusa products to sync:", len(medusa_products))
 
         if not medusa_products:
             return jsonify({"error": "No products found"}), 404
@@ -260,10 +264,13 @@ def sync_to_airtable():
                 AIRTABLE_TABLES[website])
 
         for medusa_product in medusa_products:
+            print("Syncing Medusa product ID:", medusa_product.title)
             try:
                 # 1. Handle main product
                 medusa_airtable_id = None
                 if medusa_product.id in existing_medusa_records:
+                    print("Medusa product exists in Airtable, ID:",
+                          medusa_product.title)
                     medusa_airtable_id = existing_medusa_records[medusa_product.id]
 
                     if force_update:
@@ -304,7 +311,8 @@ def sync_to_airtable():
                 for website, model in website_models.items():
                     website_products = session.query(model).filter_by(
                         medusa_id=medusa_product.id).all()
-
+                    print("Found", len(website_products),
+                          "products for website", website)
                     if not website_products:
                         continue
 
@@ -315,6 +323,7 @@ def sync_to_airtable():
                         product_url = website_product.product_url
 
                         if product_url in existing_website_records[website]:
+                            print("Product exists in Airtable, URL:", product_url)
                             if force_update:
                                 # Update existing record
                                 record = convert_to_airtable_record(
@@ -326,6 +335,8 @@ def sync_to_airtable():
                                 results["skipped_records"][website] = results["skipped_records"].get(
                                     website, 0) + 1
                         else:
+                            print(
+                                "Creating new product in Airtable, URL:", product_url)
                             # Create new record
                             record = convert_to_airtable_record(
                                 website_product, website, medusa_airtable_id
@@ -345,6 +356,10 @@ def sync_to_airtable():
                             website, 0) + batch_results["updated"]
 
                 results["synced_products"] += 1
+
+                print("Created records so far:", results["created_records"])
+                print("Updated records so far:", results["updated_records"])
+                print("Synced products so far:", results["synced_products"])
 
                 # Check API limit periodically
                 if API_CALL_COUNTER["count"] >= API_CALL_COUNTER["limit"]:
