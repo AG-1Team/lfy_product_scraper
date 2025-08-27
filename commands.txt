@@ -32,3 +32,8 @@ cat backup_2025-08-27.sql | docker exec -i postgres psql -U lfy_user_umar -d scr
 docker exec -i postgres psql -U lfy_user_umar -d postgres -c "DROP DATABASE IF EXISTS scraper_db WITH (FORCE);"
 docker exec -i postgres psql -U lfy_user_umar -d postgres -c "CREATE DATABASE scraper_db;"
 cat backup_2025-08-27.sql | docker exec -i postgres psql -U lfy_user_umar -d scraper_db
+
+SELECT p.* FROM public.product AS p WHERE metadata ? 'scraped_products';
+SELECT COUNT(*) FROM public.product AS p WHERE metadata ? 'scraped_products';
+SELECT COUNT(*) FROM public.product AS p WHERE jsonb_typeof(metadata->'scraped_products') = 'array' AND jsonb_array_length(metadata->'scraped_products') > 0;
+

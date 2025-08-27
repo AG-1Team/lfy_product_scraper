@@ -207,8 +207,8 @@ def shutdown_all_drivers(**kwargs):
     dispose_engine()
 
 
-def check_existing_product(website: str, url: str, session):
-    """Check if product already exists in database."""
+def check_existing_product(website: str, url: str, medusa_id: str, session):
+    """Check if product already exists in database for the URL or has complete data for medusa_id+website."""
     model_map = {
         "farfetch": FarfetchProduct,
         "lyst": LystProduct,
@@ -220,10 +220,43 @@ def check_existing_product(website: str, url: str, session):
     }
 
     if website not in model_map:
-        return None
+        return None, False
 
     model = model_map[website]
-    return session.query(model).filter_by(product_url=url).first()
+
+    # 1. Check if this exact URL was already scraped
+    existing_url = session.query(model).filter_by(product_url=url).first()
+    if existing_url:
+        return existing_url, True  # already scraped this URL
+
+    # 2. Check if *any record* for this medusa_id + website already has complete data
+    existing_complete = (
+        session.query(model)
+        .filter(
+            model.medusa_id == medusa_id,
+            # Check for both None and empty strings
+            model.product_name.isnot(None),
+            model.product_name != '',
+            model.original_price.isnot(None),
+            model.original_price != '',
+            model.sale_price.isnot(None),
+            model.sale_price != '',
+            model.price_aed.isnot(None),
+            model.price_aed != '',
+            model.price_usd.isnot(None),
+            model.price_usd != '',
+            model.price_gbp.isnot(None),
+            model.price_gbp != '',
+            model.price_eur.isnot(None),
+            model.price_eur != '',
+        )
+        .first()
+    )
+
+    if existing_complete:
+        return existing_complete, True  # already have complete data for this website
+
+    return None, False
 
 
 @shared_task(name="scrap_product_url", bind=True)
@@ -240,9 +273,12 @@ def scrape_product_and_notify(self, url, medusa_product_data, website):
         # Use context manager for database session
         with get_db_session() as session:
             # Check if already processed
-            existing = check_existing_product(website, url, session)
-            if existing:
-                print(f"[⏩] Skipping {url} (already scraped)")
+            medusa_id = medusa_product_data["id"]
+            existing, skip = check_existing_product(
+                website, url, medusa_id, session)
+            if skip:
+                print(
+                    f"[⏩] Skipping {url} (already scraped or complete data exists for {website})")
                 return
 
             # Get driver
@@ -252,17 +288,17 @@ def scrape_product_and_notify(self, url, medusa_product_data, website):
             data = {}
             if website == "farfetch":
                 data["farfetch"] = farfetch_retrieve_products(driver, url)
-            elif website == "lyst" and not isinstance(driver, WebDriver):
+            elif website == "lyst" and isinstance(driver, LystScraper):
                 data["lyst"] = driver.scrape_product(url)
-            elif website == "modesens" and not isinstance(driver, WebDriver):
+            elif website == "modesens" and isinstance(driver, ModeSensScraper):
                 data["modesens"] = driver.scrape_product(url)
-            elif website == "reversible" and not isinstance(driver, WebDriver):
+            elif website == "reversible" and isinstance(driver, ReversibleScraper):
                 data["reversible"] = driver.scrape_product(url)
-            elif website == "italist" and not isinstance(driver, WebDriver):
+            elif website == "italist" and isinstance(driver, ItalistScraper):
                 data["italist"] = driver.scrape_product(url)
-            elif website == "selfridge" and not isinstance(driver, WebDriver):
+            elif website == "selfridge" and isinstance(driver, SelfridgesScraper):
                 data["selfridge"] = driver.scrape_product(url)
-            elif website == "leam" and not isinstance(driver, WebDriver):
+            elif website == "leam" and isinstance(driver, LeamScraper):
                 data["leam"] = driver.scrape_product(url)
             else:
                 raise ValueError(f"Website {website} is not supported")
