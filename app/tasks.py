@@ -18,6 +18,7 @@ from threading import Lock, local
 from selenium.common.exceptions import WebDriverException, InvalidSessionIdException
 from contextlib import contextmanager
 from selenium.webdriver.remote.webdriver import WebDriver
+from sqlalchemy import or_, and_
 
 process_local = local()
 
@@ -234,21 +235,20 @@ def check_existing_product(website: str, url: str, medusa_id: str, session):
         session.query(model)
         .filter(
             model.medusa_id == medusa_id,
-            # Check for both None and empty strings
+
+            # product_name must exist
             model.product_name.isnot(None),
             model.product_name != '',
-            model.original_price.isnot(None),
-            model.original_price != '',
-            model.sale_price.isnot(None),
-            model.sale_price != '',
-            model.price_aed.isnot(None),
-            model.price_aed != '',
-            model.price_usd.isnot(None),
-            model.price_usd != '',
-            model.price_gbp.isnot(None),
-            model.price_gbp != '',
-            model.price_eur.isnot(None),
-            model.price_eur != '',
+
+            # (either original_price or sale_price present) OR (any currency field has $)
+            or_(
+            and_(model.original_price.isnot(None), model.original_price != ''),
+            and_(model.sale_price.isnot(None), model.sale_price != ''),
+            model.price_aed.like('%$%'),
+            model.price_usd.like('%$%'),
+            model.price_gbp.like('%$%'),
+            model.price_eur.like('%$%'),
+        )
         )
         .first()
     )
