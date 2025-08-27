@@ -137,13 +137,13 @@ def convert_to_airtable_record(data, table_type, medusa_airtable_id=None, is_upd
             "Created At": data.created_at.isoformat() if data.created_at else "",
             "Updated At": data.updated_at.isoformat() if data.updated_at else ""
         }
-        # Only include ID for new records, not updates
+        # Fix: Use consistent field name "ID" (uppercase)
         if not is_update:
-            fields["Id"] = data.id
+            fields["ID"] = data.id  # Changed from "Id" to "ID"
 
         return {"fields": fields}
     else:
-        # For all other website tables
+        # For all other website tables - this part looks correct
         fields = {
             "Product Name": data.product_name or "",
             "Thumbnail": format_attachment_field(data.thumbnail),
@@ -169,10 +169,10 @@ def convert_to_airtable_record(data, table_type, medusa_airtable_id=None, is_upd
 
         return {"fields": fields}
 
-
 def batch_upsert_records(table_name, records_to_create, records_to_update):
     """Create and update records in batches"""
-    results = {"created": 0, "updated": 0}
+    results = {"created": 0, "updated": 0,
+               "created_ids": []}  # Added created_ids
 
     # Create new records
     if records_to_create:
@@ -183,8 +183,12 @@ def batch_upsert_records(table_name, records_to_create, records_to_update):
             payload = {"records": batch}
 
             response = make_airtable_request("POST", url, json=payload)
-            created_count = len(response.json().get("records", []))
-            results["created"] += created_count
+            response_data = response.json()
+            created_records = response_data.get("records", [])
+            results["created"] += len(created_records)
+            # Store created record IDs
+            results["created_ids"].extend(
+                [record["id"] for record in created_records])
 
     # Update existing records
     if records_to_update:
@@ -200,7 +204,6 @@ def batch_upsert_records(table_name, records_to_create, records_to_update):
 
     return results
 
-
 @app.route("/sync-to-airtable", methods=["POST"])
 def sync_to_airtable():
     """Sync data from PostgreSQL to Airtable with deduplication and rate limiting"""
@@ -213,7 +216,6 @@ def sync_to_airtable():
         req_data = request.json or {}
         medusa_id = req_data.get("medusa_id")
         sync_all = req_data.get("sync_all", False)
-        # Force update even if exists
         force_update = req_data.get("force_update", False)
 
         if not medusa_id and not sync_all:
@@ -264,13 +266,14 @@ def sync_to_airtable():
                 AIRTABLE_TABLES[website])
 
         for medusa_product in medusa_products:
-            print("Syncing Medusa product ID:", medusa_product.title)
+            print(
+                f"Syncing Medusa product: {medusa_product.title} (ID: {medusa_product.id})")
             try:
                 # 1. Handle main product
                 medusa_airtable_id = None
                 if medusa_product.id in existing_medusa_records:
-                    print("Medusa product exists in Airtable, ID:",
-                          medusa_product.title)
+                    print(
+                        f"Medusa product exists in Airtable: {medusa_product.title}")
                     medusa_airtable_id = existing_medusa_records[medusa_product.id]
 
                     if force_update:
@@ -287,32 +290,47 @@ def sync_to_airtable():
                             "medusa", 0) + 1
                 else:
                     # Create new record
+                    print(
+                        f"Creating new medusa product: {medusa_product.title}")
                     record = convert_to_airtable_record(
                         medusa_product, 'medusa')
-                    response = batch_upsert_records(
+                    batch_result = batch_upsert_records(
                         AIRTABLE_TABLES['medusa'], [record], [])
 
-                    # Get the created record ID (you'd need to fetch it or modify batch_upsert_records to return IDs)
-                    # For now, we'll fetch it again (this is one extra API call per new product)
-                    updated_existing = get_existing_records(
-                        AIRTABLE_TABLES['medusa'], f"{{ID}} = '{medusa_product.id}'")
-                    medusa_airtable_id = updated_existing.get(
-                        medusa_product.id)
+                    # Get the created record ID from the batch result
+                    if batch_result["created_ids"]:
+                        medusa_airtable_id = batch_result["created_ids"][0]
+                        print(
+                            f"Created medusa product with Airtable ID: {medusa_airtable_id}")
+                    else:
+                        # Fallback: fetch the record again
+                        print("Fallback: Fetching created record ID...")
+                        # Brief delay to ensure record is created
+                        time.sleep(1)
+                        updated_existing = get_existing_records(
+                            AIRTABLE_TABLES['medusa'], f"{{ID}} = '{medusa_product.id}'")
+                        medusa_airtable_id = updated_existing.get(
+                            medusa_product.id)
 
                     results["created_records"]["medusa"] = results["created_records"].get(
                         "medusa", 0) + 1
 
                 if not medusa_airtable_id:
-                    results["errors"].append(
-                        f"Failed to get Airtable ID for product {medusa_product.id}")
-                    continue
+                    error_msg = f"Failed to get Airtable ID for product {medusa_product.id} ({medusa_product.title})"
+                    print(error_msg)
+                    results["errors"].append(error_msg)
+                    # Don't skip website products, continue with a warning
+                    # continue
 
                 # 2. Handle website-specific data
+                print(
+                    f"Processing website products for medusa ID: {medusa_product.id}")
                 for website, model in website_models.items():
                     website_products = session.query(model).filter_by(
                         medusa_id=medusa_product.id).all()
-                    print("Found", len(website_products),
-                          "products for website", website)
+                    print(
+                        f"Found {len(website_products)} products for website {website}")
+
                     if not website_products:
                         continue
 
@@ -321,9 +339,10 @@ def sync_to_airtable():
 
                     for website_product in website_products:
                         product_url = website_product.product_url
+                        print(f"Processing {website} product: {product_url}")
 
                         if product_url in existing_website_records[website]:
-                            print("Product exists in Airtable, URL:", product_url)
+                            print(f"Product exists in Airtable: {product_url}")
                             if force_update:
                                 # Update existing record
                                 record = convert_to_airtable_record(
@@ -336,7 +355,7 @@ def sync_to_airtable():
                                     website, 0) + 1
                         else:
                             print(
-                                "Creating new product in Airtable, URL:", product_url)
+                                f"Creating new product in Airtable: {product_url}")
                             # Create new record
                             record = convert_to_airtable_record(
                                 website_product, website, medusa_airtable_id
@@ -345,6 +364,8 @@ def sync_to_airtable():
 
                     # Batch process the records
                     if records_to_create or records_to_update:
+                        print(
+                            f"Batch processing {len(records_to_create)} creates and {len(records_to_update)} updates for {website}")
                         batch_results = batch_upsert_records(
                             AIRTABLE_TABLES[website],
                             records_to_create,
@@ -354,12 +375,16 @@ def sync_to_airtable():
                             website, 0) + batch_results["created"]
                         results["updated_records"][website] = results["updated_records"].get(
                             website, 0) + batch_results["updated"]
+                        print(f"Batch result for {website}: {batch_results}")
 
                 results["synced_products"] += 1
 
-                print("Created records so far:", results["created_records"])
-                print("Updated records so far:", results["updated_records"])
-                print("Synced products so far:", results["synced_products"])
+                print(
+                    f"Progress - Created records: {results['created_records']}")
+                print(
+                    f"Progress - Updated records: {results['updated_records']}")
+                print(
+                    f"Progress - Synced products: {results['synced_products']}")
 
                 # Check API limit periodically
                 if API_CALL_COUNTER["count"] >= API_CALL_COUNTER["limit"]:
@@ -368,8 +393,9 @@ def sync_to_airtable():
                     break
 
             except Exception as e:
-                results["errors"].append(
-                    f"Error syncing product {medusa_product.id}: {str(e)}")
+                error_msg = f"Error syncing product {medusa_product.id}: {str(e)}"
+                print(error_msg)
+                results["errors"].append(error_msg)
                 continue
 
         session.close()
@@ -382,7 +408,6 @@ def sync_to_airtable():
 
     except Exception as e:
         return jsonify({"error": f"Sync failed: {str(e)}"}), 500
-
 
 @app.route("/api-usage", methods=["GET"])
 def get_api_usage():

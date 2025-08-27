@@ -7,3 +7,12 @@ LEFT JOIN leam le ON l.medusa_id = m.id
 LEFT JOIN modesens mo ON l.medusa_id = m.id
 LEFT JOIN reversible r ON l.medusa_id = m.id
 LEFT JOIN selfridge s ON l.medusa_id = m.id;
+
+SELECT
+  COUNT(*) as total_medusa,
+  (SELECT COUNT(*) FROM farfetch) as farfetch_count,
+  (SELECT COUNT(*) FROM lyst) as lyst_count,
+  (SELECT COUNT(*) FROM italist) as italist_count
+FROM product;
+
+docker exec -it postgres psql -U lfy_user_umar -d scraper_db
