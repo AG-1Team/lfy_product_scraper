@@ -1,0 +1,34 @@
+SELECT m.id, m.title, f.product_name, l.product_name, i.product_name, le.product_name, mo.product_name, r.product_name, s.product_name
+FROM product m
+LEFT JOIN farfetch f ON f.medusa_id = m.id
+LEFT JOIN lyst l ON l.medusa_id = m.id
+LEFT JOIN italist i ON l.medusa_id = m.id
+LEFT JOIN leam le ON l.medusa_id = m.id
+LEFT JOIN modesens mo ON l.medusa_id = m.id
+LEFT JOIN reversible r ON l.medusa_id = m.id
+LEFT JOIN selfridge s ON l.medusa_id = m.id;
+
+SELECT
+  COUNT(*) as total_medusa,
+  (SELECT COUNT(*) FROM farfetch) as farfetch_count,
+  (SELECT COUNT(*) FROM lyst) as lyst_count,
+  (SELECT COUNT(*) FROM italist) as italist_count
+FROM product;
+
+docker exec -it postgres psql -U lfy_user_umar -d scraper_db
+
+docker compose -f docker-compose.prod.yml down
+
+docker compose -f docker-compose.prod.yml up --build -d
+
+docker compose logs -f --tail=1000
+
+docker exec -t postgres pg_dump -U lfy_user_umar -d scraper_db > backup_2025-08-27.sql
+
+scp -i /Users/umar/.ssh/gpu_droplet_lfy root@46.101.232.132:/root/backup_2025-08-27.sql .
+
+cat backup_2025-08-27.sql | docker exec -i postgres psql -U lfy_user_umar -d scraper_db
+
+docker exec -i postgres psql -U lfy_user_umar -d postgres -c "DROP DATABASE IF EXISTS scraper_db WITH (FORCE);"
+docker exec -i postgres psql -U lfy_user_umar -d postgres -c "CREATE DATABASE scraper_db;"
+cat backup_2025-08-27.sql | docker exec -i postgres psql -U lfy_user_umar -d scraper_db

@@ -1,30 +1,90 @@
 services:
-  lfy-scrapper-web-app:
+  web:
     build:
       context: .
-      dockerfile: Dockerfile
-    container_name: lfy-scrapper-web-dev
+      dockerfile: Dockerfile.web
+    container_name: flask_scraper
+    ports:
+      - "5500:5500"
+    volumes:
+      - .:/app
+    environment:
+      - FLASK_APP=app.run
+      - FLASK_ENV=development # Changed to development for hot reload
+      - FLASK_DEBUG=0
+      - CELERY_BROKER_URL=redis://:a2445d5e-7aaa-42a0-919e-c2f645a82f10@redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://:a2445d5e-7aaa-42a0-919e-c2f645a82f10@redis:6379/0
+      - PYTHONUNBUFFERED=1
+      - DATABASE_URL=postgresql://lfy_user_umar:lfy_pass_umar@postgres:5432/scraper_db
+    depends_on:
+      - redis
+      - postgres
+    command: >
+      sh -c "python -m flask run --host=0.0.0.0 --port=5500"
+    restart: unless-stopped
+
+  worker:
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: celery_worker
+    shm_size: 2gb
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=1g
+    volumes:
+      - .:/app
+      - ./chromedriver_cache:/root/.local/share/undetected_chromedriver
+    environment:
+      - CELERY_BROKER_URL=redis://:a2445d5e-7aaa-42a0-919e-c2f645a82f10@redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://:a2445d5e-7aaa-42a0-919e-c2f645a82f10@redis:6379/0
+      - PYTHONUNBUFFERED=1
+      - DISPLAY=:99
+      - CHROMIUM_FLAGS=--no-sandbox --disable-dev-shm-usage
+      - PYTHON_ENV=production
+      - DATABASE_URL=postgresql://lfy_user_umar:lfy_pass_umar@postgres:5432/scraper_db
+    depends_on:
+      - redis
+      - postgres
+    command: >
+      sh -c "celery -A app.tasks worker --loglevel=info --without-heartbeat --without-mingle"
+    restart: unless-stopped
+
+  redis:
+    image: redis:7
+    container_name: redis
     restart: unless-stopped
     volumes:
-      # Mount source code for live reload
-      - ./src:/app/src
-      - ./data:/app/data
-      - ./logs:/app/logs
-      # Exclude Python cache
-      - /app/src/__pycache__
-    environment:
-      - PYTHONPATH=/app
-      - ENVIRONMENT=development
-      - DEBUG=true
-    # Simple auto-restart using entr (lightweight file watcher)
-    command: >
-      sh -c "
-        echo 'Development mode: Watching for file changes...' &&
-        find /app/src -name '*.py' | entr -nr python /app/src/run.py
-      "
-    networks:
-      - dev-network
+      - ./redis.conf:/usr/local/etc/redis/redis.conf
+      - redis_data:/data
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
 
-networks:
-  dev-network:
-    driver: bridge
+  postgres:
+    image: postgres:15
+    container_name: postgres
+    environment:
+      POSTGRES_USER: lfy_user_umar
+      POSTGRES_PASSWORD: lfy_pass_umar
+      POSTGRES_DB: scraper_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  # caddy:
+  #   image: caddy:2-alpine
+  #   restart: unless-stopped
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./Caddyfile:/etc/caddy/Caddyfile
+  #     - caddy_data:/data
+  #     - caddy_config:/config
+  #   depends_on:
+  #     - web
+
+volumes:
+  postgres_data:
+  redis_data:
+  # caddy_data:
+  # caddy_config:
