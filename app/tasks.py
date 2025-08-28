@@ -125,10 +125,10 @@ celery = Celery("tasks")
 
 celery.conf.update(
     worker_pool='threads',
-    worker_concurrency=24,  # Reduced from 8 to limit concurrent DB connections
+    worker_concurrency=16,  # Reduced from 8 to limit concurrent DB connections
     worker_prefetch_multiplier=1,  # Reduced to prevent task hoarding
     task_acks_late=True,
-    worker_max_tasks_per_child=50,  # Increased to reduce worker restarts
+    worker_max_tasks_per_child=10,  # Increased to reduce worker restarts
     task_default_retry_delay=60,
     task_max_retries=3,
     task_time_limit=300,  # 5 minute timeout per task
