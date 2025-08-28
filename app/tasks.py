@@ -27,7 +27,7 @@ DATABASE_URL = os.getenv(
 
 DB_POOL_SIZE = 20
 DB_MAX_OVERFLOW = 30
-CELERY_WORKERS = 7
+CELERY_WORKERS = 8
 
 # Create default engine for the main process
 engine = create_engine(
