@@ -25,8 +25,9 @@ process_local = local()
 DATABASE_URL = os.getenv(
     "DATABASE_URL", "postgresql://user:password@localhost:5432/mydb")
 
-DB_POOL_SIZE = 24
-DB_MAX_OVERFLOW = 48
+DB_POOL_SIZE = 20
+DB_MAX_OVERFLOW = 30
+CELERY_WORKERS = 10
 
 # Create default engine for the main process
 engine = create_engine(
@@ -125,7 +126,8 @@ celery = Celery("tasks")
 
 celery.conf.update(
     worker_pool='threads',
-    worker_concurrency=16,  # Reduced from 8 to limit concurrent DB connections
+    # Reduced from 8 to limit concurrent DB connections
+    worker_concurrency=CELERY_WORKERS,
     worker_prefetch_multiplier=1,  # Reduced to prevent task hoarding
     task_acks_late=True,
     worker_max_tasks_per_child=10,  # Increased to reduce worker restarts
