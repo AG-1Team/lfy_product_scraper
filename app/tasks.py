@@ -25,11 +25,14 @@ process_local = local()
 DATABASE_URL = os.getenv(
     "DATABASE_URL", "postgresql://user:password@localhost:5432/mydb")
 
+DB_POOL_SIZE = 24
+DB_MAX_OVERFLOW = 48
+
 # Create default engine for the main process
 engine = create_engine(
     DATABASE_URL,
-    pool_size=20,  # Reduced from 10
-    max_overflow=30,  # Reduced from 20
+    pool_size=DB_POOL_SIZE,  # Reduced from 10
+    max_overflow=DB_MAX_OVERFLOW,  # Reduced from 20
     pool_pre_ping=True,
     pool_recycle=3600,  # Recycle connections every hour
     pool_timeout=30,
@@ -41,14 +44,15 @@ Base.metadata.create_all(engine)
 default_Session = scoped_session(
     sessionmaker(bind=engine, expire_on_commit=False))
 
+
 def create_engine_for_worker():
     """Create a new SQLAlchemy engine specifically for a worker process."""
     print("Creating a new SQLAlchemy engine for worker process")
     worker_engine = create_engine(
         DATABASE_URL,
         pool_pre_ping=True,
-        pool_size=20,  # Smaller pool per worker
-        max_overflow=30,
+        pool_size=DB_POOL_SIZE,  # Smaller pool per worker
+        max_overflow=DB_MAX_OVERFLOW,
         pool_recycle=3600,
         pool_timeout=30,
         echo=False
@@ -59,6 +63,7 @@ def create_engine_for_worker():
     process_local.Session = scoped_session(
         sessionmaker(bind=worker_engine, expire_on_commit=False))
     return worker_engine
+
 
 def dispose_engine():
     """Dispose of the process-local engine if it exists."""
@@ -71,6 +76,7 @@ def dispose_engine():
         process_local.engine.dispose()
         del process_local.engine
 
+
 def get_engine():
     """Get the appropriate SQLAlchemy engine for the current process."""
     if hasattr(process_local, 'engine'):
@@ -82,7 +88,7 @@ def get_engine():
 def get_db_session():
     """
     Context manager for database sessions with proper cleanup.
-    
+
     This ensures sessions are always closed and connections returned to the pool.
     """
     if hasattr(process_local, 'Session'):
@@ -100,27 +106,29 @@ def get_db_session():
     finally:
         session.close()
 
+
 def get_session():
     """
     Get a new SQLAlchemy session from the appropriate Session factory.
-    
+
     WARNING: When using this method directly, you MUST call session.close() 
     when done to return the connection to the pool.
-    
+
     Prefer using get_db_session() context manager instead.
     """
     if hasattr(process_local, 'Session'):
         return process_local.Session()
     return default_Session()
 
+
 celery = Celery("tasks")
 
 celery.conf.update(
     worker_pool='threads',
-    worker_concurrency=8,  # Reduced from 8 to limit concurrent DB connections
+    worker_concurrency=24,  # Reduced from 8 to limit concurrent DB connections
     worker_prefetch_multiplier=1,  # Reduced to prevent task hoarding
     task_acks_late=True,
-    worker_max_tasks_per_child=10,  # Increased to reduce worker restarts
+    worker_max_tasks_per_child=50,  # Increased to reduce worker restarts
     task_default_retry_delay=60,
     task_max_retries=3,
     task_time_limit=300,  # 5 minute timeout per task
@@ -156,6 +164,7 @@ def _init_driver_for_site(website: str):
         raise ValueError(f"No driver setup defined for {website}")
     return drv
 
+
 def _safe_quit_close(driver, site_name=None):
     """Try to quit then close; swallow exceptions but log."""
     try:
@@ -174,17 +183,20 @@ def _safe_quit_close(driver, site_name=None):
     except Exception as e:
         print(f"[WARN] error shutting down driver {site_name or ''}: {e}")
 
+
 def get_driver(website: str):
     """Always create a fresh driver for this worker task"""
     print(f"[ℹ] Initializing driver for {website} in worker process...")
     driver = _init_driver_for_site(website)
     return driver
 
+
 @signals.worker_process_init.connect
 def init_worker_process(*args, **kwargs):
     """Initialize resources for a worker process."""
     print("Initializing worker process...")
     create_engine_for_worker()
+
 
 @signals.worker_process_shutdown.connect
 def shutdown_all_drivers(**kwargs):
@@ -242,13 +254,14 @@ def check_existing_product(website: str, url: str, medusa_id: str, session):
 
             # (either original_price or sale_price present) OR (any currency field has $)
             or_(
-            and_(model.original_price.isnot(None), model.original_price != ''),
-            and_(model.sale_price.isnot(None), model.sale_price != ''),
-            model.price_aed.like('%$%'),
-            model.price_usd.like('%$%'),
-            model.price_gbp.like('%$%'),
-            model.price_eur.like('%$%'),
-        )
+                and_(model.original_price.isnot(None),
+                     model.original_price != ''),
+                and_(model.sale_price.isnot(None), model.sale_price != ''),
+                model.price_aed.like('%$%'),
+                model.price_usd.like('%$%'),
+                model.price_gbp.like('%$%'),
+                model.price_eur.like('%$%'),
+            )
         )
         .first()
     )
@@ -263,7 +276,7 @@ def check_existing_product(website: str, url: str, medusa_id: str, session):
 def scrape_product_and_notify(self, url, medusa_product_data, website):
     """
     Scrape product data from the given URL and website.
-    
+
     Uses proper database session management to prevent connection pool exhaustion.
     """
     print(f"[☑️] Starting scrape task for website {website} and URL {url}")
