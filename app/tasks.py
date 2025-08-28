@@ -27,7 +27,7 @@ DATABASE_URL = os.getenv(
 
 DB_POOL_SIZE = 20
 DB_MAX_OVERFLOW = 30
-CELERY_WORKERS = 8
+CELERY_WORKERS = 1
 
 # Create default engine for the main process
 engine = create_engine(
@@ -125,12 +125,12 @@ def get_session():
 celery = Celery("tasks")
 
 celery.conf.update(
-    worker_pool='threads',
+    worker_pool='solo',
     # Reduced from 8 to limit concurrent DB connections
     worker_concurrency=CELERY_WORKERS,
     worker_prefetch_multiplier=1,  # Reduced to prevent task hoarding
     task_acks_late=True,
-    worker_max_tasks_per_child=10,  # Increased to reduce worker restarts
+    worker_max_tasks_per_child=50,  # Increased to reduce worker restarts
     task_default_retry_delay=60,
     task_max_retries=3,
     task_time_limit=300,  # 5 minute timeout per task
