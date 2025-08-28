@@ -30,7 +30,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.worker
-    container_name: celery_worker
+    container_name: celery_worker_one
     shm_size: 2gb
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=1g
@@ -57,7 +57,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.worker
-    container_name: celery_worker
+    container_name: celery_worker_two
     shm_size: 2gb
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=1g
